@@ -3,7 +3,9 @@ import Link from "next/link";
 import { ArrowRight, CheckCircle2, Circle } from "lucide-react";
 import { requireAdminContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { formatCLP, todayISO } from "@/lib/format";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { getReceivables } from "@/app/(app)/finanzas/receivables";
 
 export const metadata: Metadata = { title: "Inicio" };
 
@@ -11,11 +13,17 @@ export default async function InicioPage() {
   const session = await requireAdminContext();
   const supabase = await createClient();
 
+  const today = todayISO();
+  const monthStart = `${today.slice(0, 7)}-01`;
+
   const [
     { count: memberCount },
     { count: clientCount },
     { count: openWoCount },
     { count: totalWoCount },
+    { data: monthIncome },
+    { data: recurring },
+    receivables,
   ] = await Promise.all([
     supabase
       .from("organization_members")
@@ -34,7 +42,24 @@ export default async function InicioPage() {
       .from("work_orders")
       .select("*", { count: "exact", head: true })
       .eq("org_id", session.org.id),
+    supabase
+      .from("transactions")
+      .select("amount")
+      .eq("org_id", session.org.id)
+      .eq("type", "ingreso")
+      .gte("txn_date", monthStart),
+    supabase
+      .from("recurring_expenses")
+      .select("amount")
+      .eq("org_id", session.org.id)
+      .eq("is_active", true),
+    getReceivables(supabase, session.org.id),
   ]);
+
+  const incomeThisMonth = (monthIncome ?? []).reduce((s, t) => s + t.amount, 0);
+  const fixedCosts = (recurring ?? []).reduce((s, r) => s + r.amount, 0);
+  const breakevenGap = fixedCosts - incomeThisMonth;
+  const totalReceivable = receivables.reduce((s, r) => s + r.outstanding, 0);
 
   const steps = [
     {
@@ -107,14 +132,35 @@ export default async function InicioPage() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Breakeven del mes
+              Punto de equilibrio
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold text-muted-foreground/40">—</p>
-            <p className="text-xs text-muted-foreground">
-              Disponible en el Hito 4
-            </p>
+            {fixedCosts === 0 ? (
+              <>
+                <p className="text-2xl font-bold text-muted-foreground/40">—</p>
+                <Link
+                  href="/finanzas/recurrentes"
+                  className="text-xs font-medium text-primary hover:underline"
+                >
+                  Cargar costos fijos
+                </Link>
+              </>
+            ) : breakevenGap <= 0 ? (
+              <>
+                <p className="text-2xl font-bold text-success">Cubierto</p>
+                <p className="text-xs text-muted-foreground">
+                  Ya cubriste tus costos fijos del mes
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-2xl font-bold">{formatCLP(breakevenGap)}</p>
+                <p className="text-xs text-muted-foreground">
+                  te faltan para el equilibrio
+                </p>
+              </>
+            )}
           </CardContent>
         </Card>
         <Card>
@@ -140,10 +186,17 @@ export default async function InicioPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold text-muted-foreground/40">—</p>
-            <p className="text-xs text-muted-foreground">
-              Disponible en el Hito 4
-            </p>
+            <p className="text-2xl font-bold">{formatCLP(totalReceivable)}</p>
+            {totalReceivable > 0 ? (
+              <Link
+                href="/finanzas/por-cobrar"
+                className="text-xs font-medium text-primary hover:underline"
+              >
+                Ver cuentas por cobrar
+              </Link>
+            ) : (
+              <p className="text-xs text-muted-foreground">Estás al día</p>
+            )}
           </CardContent>
         </Card>
       </div>

@@ -13,6 +13,7 @@ import { AssignSelect } from "./assign-select";
 import { Checklist, type ChecklistItem } from "./checklist";
 import { NoteForm, DeleteNoteButton } from "./notes";
 import { FilesPanel, type WorkOrderFile } from "./files-panel";
+import { CostsPanel, type WorkOrderCost } from "./costs";
 import { DeleteWorkOrderButton } from "./delete-work-order-button";
 
 export const metadata: Metadata = { title: "Orden de trabajo" };
@@ -71,6 +72,7 @@ export default async function OrdenDetallePage({
     { data: notes },
     { data: checklistItems },
     { data: files },
+    { data: costs },
   ] = await Promise.all([
     supabase
       .from("work_order_stages")
@@ -103,6 +105,14 @@ export default async function OrdenDetallePage({
       .select("id, file_name, size_bytes, storage_path, uploaded_by")
       .eq("work_order_id", id)
       .order("created_at"),
+    // Costos reales: RLS solo-admin (operario recibe vacío)
+    isAdmin
+      ? supabase
+          .from("work_order_costs")
+          .select("id, description, amount, source")
+          .eq("work_order_id", id)
+          .order("created_at")
+      : Promise.resolve({ data: [] as never[] }),
   ]);
 
   const client = workOrder.clients as unknown as {
@@ -140,6 +150,14 @@ export default async function OrdenDetallePage({
     workOrder.due_date < todayISO();
 
   const iva = Math.round(workOrder.amount_net * workOrder.tax_rate);
+
+  const costList = (costs ?? []) as WorkOrderCost[];
+  const realCost = costList.reduce((sum, c) => sum + c.amount, 0);
+  const realMargin = workOrder.amount_net - realCost;
+  const realMarginPct =
+    workOrder.amount_net > 0
+      ? Math.round((realMargin / workOrder.amount_net) * 100)
+      : 0;
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-4">
@@ -270,6 +288,49 @@ export default async function OrdenDetallePage({
               )}
             </CardContent>
           </Card>
+
+          {isAdmin && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Costos y margen real</CardTitle>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-4">
+                <CostsPanel workOrderId={workOrder.id} costs={costList} />
+                <div className="rounded-lg bg-muted/50 p-4">
+                  <div className="flex flex-wrap gap-x-8 gap-y-2">
+                    <div>
+                      <p className="text-xs text-muted-foreground">Venta neta</p>
+                      <p className="text-sm font-semibold">
+                        {formatCLP(workOrder.amount_net)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">
+                        Costo real
+                      </p>
+                      <p className="text-sm font-semibold">
+                        {formatCLP(realCost)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">
+                        Margen real
+                      </p>
+                      <p
+                        className={
+                          realMargin >= 0
+                            ? "text-sm font-semibold text-success"
+                            : "text-sm font-semibold text-destructive"
+                        }
+                      >
+                        {formatCLP(realMargin)} ({realMarginPct}%)
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           <Card>
             <CardHeader>
