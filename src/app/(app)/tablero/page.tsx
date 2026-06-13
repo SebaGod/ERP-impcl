@@ -28,20 +28,30 @@ export default async function TableroPage() {
   const supabase = await createClient();
   const isAdmin = session.role === "admin";
 
-  const [{ data: stages }, { data: workOrders }] = await Promise.all([
-    supabase
-      .from("work_order_stages")
-      .select("id, name, color, position, is_terminal")
-      .eq("org_id", session.org.id)
-      .order("position"),
-    supabase
-      .from("work_orders")
-      .select(
-        "id, code, title, due_date, amount_net, stage_id, board_position, completed_at, clients (name), assigned:profiles!work_orders_assigned_to_fkey (full_name)"
-      )
-      .eq("org_id", session.org.id)
-      .order("board_position"),
-  ]);
+  const [{ data: stages }, { data: workOrders }, { data: sentQuotes }] =
+    await Promise.all([
+      supabase
+        .from("work_order_stages")
+        .select("id, name, color, position, is_terminal")
+        .eq("org_id", session.org.id)
+        .order("position"),
+      supabase
+        .from("work_orders")
+        .select(
+          "id, code, title, due_date, amount_net, stage_id, board_position, completed_at, clients (name), assigned:profiles!work_orders_assigned_to_fkey (full_name)"
+        )
+        .eq("org_id", session.org.id)
+        .order("board_position"),
+      // Columna virtual "Cotizado": solo admin ve cotizaciones
+      isAdmin
+        ? supabase
+            .from("quotes")
+            .select("id, code, gross_total, clients (name)")
+            .eq("org_id", session.org.id)
+            .eq("status", "enviada")
+            .order("created_at", { ascending: false })
+        : Promise.resolve({ data: [] as never[] }),
+    ]);
 
   const orders = (workOrders ?? []) as unknown as BoardWorkOrder[];
   const byStage = new Map<string, BoardWorkOrder[]>();
@@ -72,10 +82,39 @@ export default async function TableroPage() {
       </div>
 
       <div className="flex flex-1 gap-3 overflow-x-auto pb-4">
-        {/* Columna virtual: cotizaciones enviadas (se conecta en Hito 3) */}
+        {/* Columna virtual: cotizaciones enviadas esperando respuesta */}
         {isAdmin && (
-          <BoardColumn name="Cotizado" color="#94a3b8" count={0}>
-            <ColumnEmpty text="Las cotizaciones enviadas aparecerán aquí" />
+          <BoardColumn
+            name="Cotizado"
+            color="#94a3b8"
+            count={(sentQuotes ?? []).length}
+          >
+            {(sentQuotes ?? []).length === 0 ? (
+              <ColumnEmpty text="Las cotizaciones enviadas aparecerán aquí" />
+            ) : (
+              (sentQuotes ?? []).map((quote) => {
+                const quoteClient = quote.clients as unknown as {
+                  name: string;
+                } | null;
+                return (
+                  <Link
+                    key={quote.id}
+                    href={`/cotizaciones/${quote.id}`}
+                    className="block rounded-lg border border-border bg-card p-3 shadow-sm hover:bg-muted/50"
+                  >
+                    <p className="text-xs font-medium text-muted-foreground">
+                      {quote.code}
+                    </p>
+                    <p className="mt-0.5 truncate text-sm font-medium">
+                      {quoteClient?.name ?? "—"}
+                    </p>
+                    <p className="mt-1 text-xs font-medium">
+                      {formatCLP(quote.gross_total)}
+                    </p>
+                  </Link>
+                );
+              })
+            )}
           </BoardColumn>
         )}
 
