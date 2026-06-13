@@ -1,39 +1,121 @@
 import type { Metadata } from "next";
-import { Kanban } from "lucide-react";
+import Link from "next/link";
+import { Kanban, Plus } from "lucide-react";
 import { requireOrgContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { formatCLP } from "@/lib/format";
+import { buttonClasses } from "@/components/ui/button";
+import { WorkOrderCard } from "./work-order-card";
+import { BoardRealtime } from "./board-realtime";
 
 export const metadata: Metadata = { title: "Tablero" };
+
+interface BoardWorkOrder {
+  id: string;
+  code: string;
+  title: string;
+  due_date: string | null;
+  amount_net: number;
+  stage_id: string;
+  board_position: number;
+  completed_at: string | null;
+  clients: { name: string } | null;
+  assigned: { full_name: string } | null;
+}
 
 export default async function TableroPage() {
   const session = await requireOrgContext();
   const supabase = await createClient();
+  const isAdmin = session.role === "admin";
 
-  const { data: stages } = await supabase
-    .from("work_order_stages")
-    .select("id, name, color, position")
-    .eq("org_id", session.org.id)
-    .order("position");
+  const [{ data: stages }, { data: workOrders }] = await Promise.all([
+    supabase
+      .from("work_order_stages")
+      .select("id, name, color, position, is_terminal")
+      .eq("org_id", session.org.id)
+      .order("position"),
+    supabase
+      .from("work_orders")
+      .select(
+        "id, code, title, due_date, amount_net, stage_id, board_position, completed_at, clients (name), assigned:profiles!work_orders_assigned_to_fkey (full_name)"
+      )
+      .eq("org_id", session.org.id)
+      .order("board_position"),
+  ]);
+
+  const orders = (workOrders ?? []) as unknown as BoardWorkOrder[];
+  const byStage = new Map<string, BoardWorkOrder[]>();
+  for (const wo of orders) {
+    const list = byStage.get(wo.stage_id) ?? [];
+    list.push(wo);
+    byStage.set(wo.stage_id, list);
+  }
+
+  const stageList = stages ?? [];
 
   return (
     <div className="flex h-full flex-col gap-4">
-      <div>
-        <h1 className="text-2xl font-bold">Tablero de producción</h1>
-        <p className="text-muted-foreground">
-          Tus etapas están listas. Las órdenes de trabajo llegan en el Hito 2.
-        </p>
+      <BoardRealtime orgId={session.org.id} />
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold">Tablero de producción</h1>
+          <p className="text-muted-foreground">
+            Mueve cada orden con las flechas o entra para ver el detalle.
+          </p>
+        </div>
+        {isAdmin && (
+          <Link href="/tablero/nueva" className={buttonClasses("primary", "md")}>
+            <Plus className="size-4" /> Nueva orden
+          </Link>
+        )}
       </div>
 
       <div className="flex flex-1 gap-3 overflow-x-auto pb-4">
         {/* Columna virtual: cotizaciones enviadas (se conecta en Hito 3) */}
-        <BoardColumn name="Cotizado" color="#94a3b8">
-          <ColumnEmpty text="Las cotizaciones enviadas aparecerán aquí" />
-        </BoardColumn>
-        {(stages ?? []).map((stage) => (
-          <BoardColumn key={stage.id} name={stage.name} color={stage.color}>
-            <ColumnEmpty text="Sin órdenes de trabajo" />
+        {isAdmin && (
+          <BoardColumn name="Cotizado" color="#94a3b8" count={0}>
+            <ColumnEmpty text="Las cotizaciones enviadas aparecerán aquí" />
           </BoardColumn>
-        ))}
+        )}
+
+        {stageList.map((stage, index) => {
+          const stageOrders = byStage.get(stage.id) ?? [];
+          const sum = stageOrders.reduce((acc, wo) => acc + wo.amount_net, 0);
+          const prevStageId = index > 0 ? stageList[index - 1].id : null;
+          const nextStageId =
+            index < stageList.length - 1 ? stageList[index + 1].id : null;
+
+          return (
+            <BoardColumn
+              key={stage.id}
+              name={stage.name}
+              color={stage.color}
+              count={stageOrders.length}
+              subtitle={isAdmin && sum > 0 ? `${formatCLP(sum)} neto` : undefined}
+            >
+              {stageOrders.length === 0 ? (
+                <ColumnEmpty text="Sin órdenes de trabajo" />
+              ) : (
+                stageOrders.map((wo) => (
+                  <WorkOrderCard
+                    key={wo.id}
+                    id={wo.id}
+                    code={wo.code}
+                    title={wo.title}
+                    clientName={wo.clients?.name ?? "—"}
+                    dueDate={wo.due_date}
+                    amountNet={isAdmin ? wo.amount_net : null}
+                    assignedName={wo.assigned?.full_name ?? null}
+                    completed={wo.completed_at !== null}
+                    prevStageId={prevStageId}
+                    nextStageId={nextStageId}
+                  />
+                ))
+              )}
+            </BoardColumn>
+          );
+        })}
       </div>
     </div>
   );
@@ -42,20 +124,32 @@ export default async function TableroPage() {
 function BoardColumn({
   name,
   color,
+  count,
+  subtitle,
   children,
 }: {
   name: string;
   color: string;
+  count: number;
+  subtitle?: string;
   children: React.ReactNode;
 }) {
   return (
     <div className="flex w-64 shrink-0 flex-col rounded-xl border border-border bg-muted/50">
-      <div className="flex items-center gap-2 p-3">
-        <span
-          className="size-2.5 rounded-full"
-          style={{ backgroundColor: color }}
-        />
-        <h2 className="text-sm font-semibold">{name}</h2>
+      <div className="p-3">
+        <div className="flex items-center gap-2">
+          <span
+            className="size-2.5 rounded-full"
+            style={{ backgroundColor: color }}
+          />
+          <h2 className="text-sm font-semibold">{name}</h2>
+          <span className="ml-auto rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+            {count}
+          </span>
+        </div>
+        {subtitle && (
+          <p className="mt-1 pl-4.5 text-xs text-muted-foreground">{subtitle}</p>
+        )}
       </div>
       <div className="flex flex-1 flex-col gap-2 p-2 pt-0">{children}</div>
     </div>

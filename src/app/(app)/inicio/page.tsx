@@ -11,13 +11,27 @@ export default async function InicioPage() {
   const session = await requireAdminContext();
   const supabase = await createClient();
 
-  const [{ count: memberCount }, { count: clientCount }] = await Promise.all([
+  const [
+    { count: memberCount },
+    { count: clientCount },
+    { count: openWoCount },
+    { count: totalWoCount },
+  ] = await Promise.all([
     supabase
       .from("organization_members")
       .select("*", { count: "exact", head: true })
       .eq("org_id", session.org.id),
     supabase
       .from("clients")
+      .select("*", { count: "exact", head: true })
+      .eq("org_id", session.org.id),
+    supabase
+      .from("work_orders")
+      .select("*", { count: "exact", head: true })
+      .eq("org_id", session.org.id)
+      .is("completed_at", null),
+    supabase
+      .from("work_orders")
       .select("*", { count: "exact", head: true })
       .eq("org_id", session.org.id),
   ]);
@@ -37,6 +51,11 @@ export default async function InicioPage() {
       label: "Registrar tu primer cliente",
       done: (clientCount ?? 0) > 0,
       href: "/clientes",
+    },
+    {
+      label: "Crear tu primera orden de trabajo",
+      done: (totalWoCount ?? 0) > 0,
+      href: "/tablero/nueva",
     },
   ];
 
@@ -85,23 +104,48 @@ export default async function InicioPage() {
       </Card>
 
       <div className="grid gap-4 sm:grid-cols-3">
-        {[
-          { title: "Breakeven del mes", note: "Disponible en el Hito 4" },
-          { title: "OTs en curso", note: "Disponible en el Hito 2" },
-          { title: "Por cobrar", note: "Disponible en el Hito 4" },
-        ].map((item) => (
-          <Card key={item.title}>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                {item.title}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-bold text-muted-foreground/40">—</p>
-              <p className="text-xs text-muted-foreground">{item.note}</p>
-            </CardContent>
-          </Card>
-        ))}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Breakeven del mes
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold text-muted-foreground/40">—</p>
+            <p className="text-xs text-muted-foreground">
+              Disponible en el Hito 4
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              OTs en curso
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold">{openWoCount ?? 0}</p>
+            <Link
+              href="/tablero"
+              className="text-xs font-medium text-primary hover:underline"
+            >
+              Ver tablero
+            </Link>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Por cobrar
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold text-muted-foreground/40">—</p>
+            <p className="text-xs text-muted-foreground">
+              Disponible en el Hito 4
+            </p>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );
