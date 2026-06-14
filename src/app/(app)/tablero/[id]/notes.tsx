@@ -1,9 +1,10 @@
 "use client";
 
-import { useActionState, useTransition } from "react";
+import { useActionState, useRef, useTransition } from "react";
 import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { useResetOnSuccess } from "@/lib/use-reset-on-success";
 import { addNote, deleteNote, type ActionState } from "../actions";
 
 const initialState: ActionState = { error: null };
@@ -13,9 +14,11 @@ export function NoteForm({ workOrderId }: { workOrderId: string }) {
     addNote.bind(null, workOrderId),
     initialState
   );
+  const formRef = useRef<HTMLFormElement>(null);
+  useResetOnSuccess(state, formRef);
 
   return (
-    <form action={formAction} className="flex flex-col gap-2">
+    <form ref={formRef} action={formAction} className="flex flex-col gap-2">
       <Textarea
         name="body"
         placeholder="Escribe una nota para el equipo…"

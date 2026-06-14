@@ -1,20 +1,27 @@
 "use client";
 
-import { useActionState, useTransition } from "react";
+import { useActionState, useRef, useTransition } from "react";
 import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
+import { useResetOnSuccess } from "@/lib/use-reset-on-success";
 import { addCategory, deleteCategory, type ActionState } from "../actions";
 
 const initialState: ActionState = { error: null };
 
 export function CategoryForm() {
   const [state, formAction, pending] = useActionState(addCategory, initialState);
+  const formRef = useRef<HTMLFormElement>(null);
+  useResetOnSuccess(state, formRef);
 
   return (
-    <form action={formAction} className="flex flex-col gap-3 sm:flex-row sm:items-end">
+    <form
+      ref={formRef}
+      action={formAction}
+      className="flex flex-col gap-3 sm:flex-row sm:items-end"
+    >
       <div className="flex flex-1 flex-col gap-1.5">
         <Label htmlFor="cat-name">Nombre</Label>
         <Input id="cat-name" name="name" placeholder="Marketing" required />

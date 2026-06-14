@@ -1,10 +1,11 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
+import { useResetOnSuccess } from "@/lib/use-reset-on-success";
 import { createInvitation, type ActionState } from "./actions";
 
 const initialState: ActionState = { error: null };
@@ -14,9 +15,12 @@ export function InviteForm() {
     createInvitation,
     initialState
   );
+  const formRef = useRef<HTMLFormElement>(null);
+  useResetOnSuccess(state, formRef);
 
   return (
     <form
+      ref={formRef}
       action={formAction}
       className="flex flex-col gap-3 sm:flex-row sm:items-end"
     >

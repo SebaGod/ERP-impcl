@@ -1,8 +1,9 @@
 "use client";
 
-import { useActionState, useState, useTransition } from "react";
+import { useActionState, useRef, useState, useTransition } from "react";
 import { ArrowLeftRight, Pencil, Trash2 } from "lucide-react";
 import { formatCLP } from "@/lib/format";
+import { useResetOnSuccess } from "@/lib/use-reset-on-success";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -109,13 +110,13 @@ function MovementForm({
     initial
   );
   const [type, setType] = useState("entrada");
+  const formRef = useRef<HTMLFormElement>(null);
+  useResetOnSuccess(state, formRef, onDone);
 
   return (
     <form
-      action={(formData) => {
-        formAction(formData);
-        if (!pending) onDone();
-      }}
+      ref={formRef}
+      action={formAction}
       className="flex flex-col gap-3 border-t border-border bg-muted/30 p-4"
     >
       <div className="grid gap-3 sm:grid-cols-3">

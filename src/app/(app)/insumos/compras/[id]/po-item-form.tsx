@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
+import { useResetOnSuccess } from "@/lib/use-reset-on-success";
 import { addPurchaseOrderItem, type ActionState } from "../../actions";
 
 const initialState: ActionState = { error: null };
@@ -30,6 +31,7 @@ export function PoItemForm({
   );
   const formRef = useRef<HTMLFormElement>(null);
   const [cost, setCost] = useState("");
+  useResetOnSuccess(state, formRef, () => setCost(""));
 
   function onPickItem(id: string) {
     const item = items.find((i) => i.id === id);
@@ -39,11 +41,7 @@ export function PoItemForm({
   return (
     <form
       ref={formRef}
-      action={(formData) => {
-        formAction(formData);
-        formRef.current?.reset();
-        setCost("");
-      }}
+      action={formAction}
       className="flex flex-col gap-3 rounded-lg border border-dashed border-border p-4"
     >
       <p className="text-sm font-medium">Agregar insumo</p>

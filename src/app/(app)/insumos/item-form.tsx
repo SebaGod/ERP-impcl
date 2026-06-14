@@ -1,9 +1,10 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useResetOnSuccess } from "@/lib/use-reset-on-success";
 import { addInventoryItem, type ActionState } from "./actions";
 
 const initialState: ActionState = { error: null };
@@ -13,9 +14,11 @@ export function AddItemForm() {
     addInventoryItem,
     initialState
   );
+  const formRef = useRef<HTMLFormElement>(null);
+  useResetOnSuccess(state, formRef);
 
   return (
-    <form action={formAction} className="flex flex-col gap-4">
+    <form ref={formRef} action={formAction} className="flex flex-col gap-4">
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="flex flex-col gap-1.5 sm:col-span-2">
           <Label htmlFor="it-name">Nombre *</Label>

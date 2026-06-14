@@ -1,11 +1,12 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { useResetOnSuccess } from "@/lib/use-reset-on-success";
 import { addTransaction, type ActionState } from "./actions";
 
 const initialState: ActionState = { error: null };
@@ -34,6 +35,8 @@ export function TransactionForm({
     initialState
   );
   const [type, setType] = useState<"ingreso" | "egreso">("egreso");
+  const formRef = useRef<HTMLFormElement>(null);
+  useResetOnSuccess(state, formRef);
 
   // Ingresos → categorías ingreso; egresos → gastos fijos y variables
   const visible = categories.filter((c) =>
@@ -46,7 +49,7 @@ export function TransactionForm({
   };
 
   return (
-    <form action={formAction} className="flex flex-col gap-4">
+    <form ref={formRef} action={formAction} className="flex flex-col gap-4">
       <input type="hidden" name="type" value={type} />
       <div className="grid grid-cols-2 gap-2">
         <button

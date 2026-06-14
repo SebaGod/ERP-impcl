@@ -1,8 +1,9 @@
 "use client";
 
-import { useActionState, useTransition } from "react";
+import { useActionState, useRef, useTransition } from "react";
 import { Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useResetOnSuccess } from "@/lib/use-reset-on-success";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -31,13 +32,15 @@ export function Checklist({
     addChecklistItem.bind(null, workOrderId),
     initialState
   );
+  const formRef = useRef<HTMLFormElement>(null);
+  useResetOnSuccess(state, formRef);
 
   return (
     <div className="flex flex-col gap-2">
       {items.map((item) => (
         <ChecklistRow key={item.id} workOrderId={workOrderId} item={item} />
       ))}
-      <form action={formAction} className="mt-1 flex gap-2">
+      <form ref={formRef} action={formAction} className="mt-1 flex gap-2">
         <Input
           name="label"
           placeholder="Agregar tarea…"

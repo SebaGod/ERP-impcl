@@ -1,8 +1,9 @@
 "use client";
 
-import { useActionState, useTransition } from "react";
+import { useActionState, useRef, useTransition } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { formatCLP } from "@/lib/format";
+import { useResetOnSuccess } from "@/lib/use-reset-on-success";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -31,6 +32,8 @@ export function CostsPanel({
     addWorkOrderCost.bind(null, workOrderId),
     initialState
   );
+  const formRef = useRef<HTMLFormElement>(null);
+  useResetOnSuccess(state, formRef);
 
   return (
     <div className="flex flex-col gap-2">
@@ -43,7 +46,7 @@ export function CostsPanel({
           margen real de este trabajo.
         </p>
       )}
-      <form action={formAction} className="mt-1 flex items-end gap-2">
+      <form ref={formRef} action={formAction} className="mt-1 flex items-end gap-2">
         <div className="flex flex-1 flex-col gap-1">
           <label className="text-xs text-muted-foreground">Descripción</label>
           <Input name="description" placeholder="Papel couché" className="h-9" required />

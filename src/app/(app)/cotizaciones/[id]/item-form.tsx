@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
+import { useResetOnSuccess } from "@/lib/use-reset-on-success";
 import { addQuoteItem, type ActionState } from "../actions";
 
 const initialState: ActionState = { error: null };
@@ -50,17 +51,17 @@ export function ItemForm({
     }
   }
 
+  useResetOnSuccess(state, formRef, () => {
+    setProductId("");
+    setDescription("");
+    setUnitPrice("");
+    setUnitCost("");
+  });
+
   return (
     <form
       ref={formRef}
-      action={(formData) => {
-        formAction(formData);
-        formRef.current?.reset();
-        setProductId("");
-        setDescription("");
-        setUnitPrice("");
-        setUnitCost("");
-      }}
+      action={formAction}
       className="flex flex-col gap-3 rounded-lg border border-dashed border-border p-4"
     >
       <p className="text-sm font-medium">Agregar ítem</p>
