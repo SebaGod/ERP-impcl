@@ -4,6 +4,7 @@ import {
   Contact,
   FileText,
   Home,
+  Inbox,
   Kanban,
   Package,
   PieChart,
@@ -23,6 +24,7 @@ export interface NavItem {
 
 export const navItems: NavItem[] = [
   { href: "/inicio", label: "Inicio", icon: Home, roles: ["admin"] },
+  { href: "/conversaciones", label: "Conversaciones", icon: Inbox, roles: ["admin", "operario"] },
   { href: "/contactos", label: "Contactos", icon: Contact, roles: ["admin", "operario"] },
   { href: "/oportunidades", label: "Oportunidades", icon: Target, roles: ["admin", "operario"] },
   { href: "/agentes", label: "Agentes IA", icon: Bot, roles: ["admin"] },
