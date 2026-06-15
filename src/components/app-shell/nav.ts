@@ -1,5 +1,7 @@
 import {
   Banknote,
+  Bot,
+  Contact,
   FileText,
   Home,
   Kanban,
@@ -20,6 +22,8 @@ export interface NavItem {
 
 export const navItems: NavItem[] = [
   { href: "/inicio", label: "Inicio", icon: Home, roles: ["admin"] },
+  { href: "/contactos", label: "Contactos", icon: Contact, roles: ["admin", "operario"] },
+  { href: "/agentes", label: "Agentes IA", icon: Bot, roles: ["admin"] },
   { href: "/tablero", label: "Tablero", icon: Kanban, roles: ["admin", "operario"] },
   { href: "/cotizaciones", label: "Cotizaciones", icon: FileText, roles: ["admin"] },
   { href: "/clientes", label: "Clientes", icon: Users, roles: ["admin"] },
