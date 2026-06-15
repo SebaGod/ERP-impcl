@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { ensureDefaultPipeline } from "@/lib/crm/pipeline";
 
 /**
  * Motor del agente de IA. Arma un prompt estructurado (personalidad,
@@ -135,11 +136,6 @@ const tools: Anthropic.Tool[] = [
   },
 ];
 
-interface PipelineInfo {
-  id: string;
-  stages: { id: string; name: string }[];
-}
-
 interface RunContext {
   supabase: SupabaseClient;
   orgId: string;
@@ -149,60 +145,6 @@ interface RunContext {
   agent: AgentConfig;
   history: HistoryMessage[];
   knowledge: KnowledgeEntry[];
-}
-
-/** Devuelve el embudo por defecto; lo crea si la org aún no tiene uno. */
-async function ensurePipeline(ctx: RunContext): Promise<PipelineInfo> {
-  const { data: existing } = await ctx.supabase
-    .from("pipelines")
-    .select("id, pipeline_stages (id, name, position)")
-    .eq("org_id", ctx.orgId)
-    .order("position")
-    .limit(1)
-    .maybeSingle();
-
-  if (existing) {
-    const stages = (
-      (existing.pipeline_stages as { id: string; name: string; position: number }[]) ?? []
-    )
-      .slice()
-      .sort((a, b) => a.position - b.position)
-      .map((s) => ({ id: s.id, name: s.name }));
-    return { id: existing.id, stages };
-  }
-
-  const { data: pipeline } = await ctx.supabase
-    .from("pipelines")
-    .insert({ org_id: ctx.orgId, name: "Embudo de ventas" })
-    .select("id")
-    .single();
-
-  const defaults = [
-    { name: "Nuevo", color: "#64748b" },
-    { name: "Contactado", color: "#3b82f6" },
-    { name: "Propuesta", color: "#f59e0b" },
-    { name: "Ganado", color: "#22c55e" },
-    { name: "Perdido", color: "#ef4444" },
-  ];
-  const { data: stages } = await ctx.supabase
-    .from("pipeline_stages")
-    .insert(
-      defaults.map((s, i) => ({
-        org_id: ctx.orgId,
-        pipeline_id: pipeline!.id,
-        name: s.name,
-        color: s.color,
-        position: i,
-      }))
-    )
-    .select("id, name, position");
-
-  return {
-    id: pipeline!.id,
-    stages: ((stages as { id: string; name: string; position: number }[]) ?? [])
-      .sort((a, b) => a.position - b.position)
-      .map((s) => ({ id: s.id, name: s.name })),
-  };
 }
 
 async function executeTool(
@@ -249,7 +191,7 @@ async function executeTool(
     }
 
     case "gestionar_oportunidad": {
-      const pipeline = await ensurePipeline(ctx);
+      const pipeline = await ensureDefaultPipeline(ctx.supabase, ctx.orgId);
       const wanted = str(input.etapa).toLowerCase();
       const stage =
         pipeline.stages.find((s) => s.name.toLowerCase() === wanted) ??
