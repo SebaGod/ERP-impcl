@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { brand } from "@/config/brand";
 
 export default function AuthLayout({
@@ -17,6 +18,15 @@ export default function AuthLayout({
         </p>
       </div>
       <div className="w-full max-w-sm">{children}</div>
+      <nav className="flex items-center gap-4 text-xs text-muted-foreground">
+        <Link href="/privacidad" className="hover:text-foreground">
+          Privacidad
+        </Link>
+        <span aria-hidden>·</span>
+        <Link href="/eliminar-datos" className="hover:text-foreground">
+          Eliminar datos
+        </Link>
+      </nav>
     </div>
   );
 }

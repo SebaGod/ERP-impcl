@@ -7,6 +7,8 @@ const PUBLIC_PATHS = [
   "/invitacion",
   "/auth",
   "/cotizacion",
+  "/privacidad",
+  "/eliminar-datos",
 ];
 
 function isPublicPath(pathname: string) {
