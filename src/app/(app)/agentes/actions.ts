@@ -14,8 +14,9 @@ function agentFields(formData: FormData) {
   const get = (k: string) => String(formData.get(k) ?? "").trim();
   return {
     name: get("name"),
+    personality: get("personality"),
     goal: get("goal"),
-    system_prompt: get("system_prompt"),
+    additional_info: get("additional_info"),
     model: get("model") || "claude-haiku-4-5",
     auto_reply: formData.get("auto_reply") === "on",
   };
@@ -35,8 +36,9 @@ export async function createAgent(
     .insert({
       org_id: session.org.id,
       name: fields.name,
+      personality: fields.personality,
       goal: fields.goal,
-      system_prompt: fields.system_prompt,
+      additional_info: fields.additional_info,
       model: fields.model,
       auto_reply: fields.auto_reply,
       created_by: session.userId,
@@ -63,8 +65,9 @@ export async function updateAgent(
     .from("ai_agents")
     .update({
       name: fields.name,
+      personality: fields.personality,
       goal: fields.goal,
-      system_prompt: fields.system_prompt,
+      additional_info: fields.additional_info,
       model: fields.model,
       auto_reply: fields.auto_reply,
     })
@@ -75,6 +78,57 @@ export async function updateAgent(
   revalidatePath(`/agentes/${agentId}`);
   revalidatePath("/agentes");
   return { error: null, success: "Cambios guardados" };
+}
+
+// ---------------------------------------------------------------
+// Base de conocimiento del agente
+// ---------------------------------------------------------------
+
+export async function addKnowledge(
+  agentId: string,
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const session = await requireAdminContext();
+  const title = String(formData.get("title") ?? "").trim();
+  const content = String(formData.get("content") ?? "").trim();
+  if (!title) return { error: "Ponle un título a la entrada" };
+  if (!content) return { error: "Escribe el contenido" };
+
+  const supabase = await createClient();
+  const { data: last } = await supabase
+    .from("ai_agent_knowledge")
+    .select("position")
+    .eq("ai_agent_id", agentId)
+    .order("position", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const { error } = await supabase.from("ai_agent_knowledge").insert({
+    org_id: session.org.id,
+    ai_agent_id: agentId,
+    title,
+    content,
+    position: (last?.position ?? 0) + 1,
+  });
+  if (error) return { error: "No pudimos guardar la entrada." };
+
+  revalidatePath(`/agentes/${agentId}`);
+  return { error: null, success: "Entrada agregada" };
+}
+
+export async function deleteKnowledge(
+  entryId: string,
+  agentId: string
+): Promise<void> {
+  const session = await requireAdminContext();
+  const supabase = await createClient();
+  await supabase
+    .from("ai_agent_knowledge")
+    .delete()
+    .eq("id", entryId)
+    .eq("org_id", session.org.id);
+  revalidatePath(`/agentes/${agentId}`);
 }
 
 export async function deleteAgent(agentId: string): Promise<ActionState> {

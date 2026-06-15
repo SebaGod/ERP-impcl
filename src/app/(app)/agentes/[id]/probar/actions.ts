@@ -23,7 +23,7 @@ export async function sendTestMessage(
   const { data: conversation } = await supabase
     .from("conversations")
     .select(
-      "id, contact_id, ai_agent_id, ai_enabled, contacts (id, name, email, phone, company, lifecycle, score)"
+      "id, contact_id, ai_agent_id, ai_enabled, contacts (id, name, email, phone, company, lifecycle, score, notes)"
     )
     .eq("id", conversationId)
     .eq("org_id", session.org.id)
@@ -50,22 +50,29 @@ export async function sendTestMessage(
     return { error: null };
   }
 
-  const { data: agent } = await supabase
-    .from("ai_agents")
-    .select("id, name, goal, system_prompt, model")
-    .eq("id", conversation.ai_agent_id)
-    .eq("org_id", session.org.id)
-    .maybeSingle();
+  const [{ data: agent }, { data: knowledge }, { data: history }] =
+    await Promise.all([
+      supabase
+        .from("ai_agents")
+        .select("id, name, personality, goal, additional_info, model")
+        .eq("id", conversation.ai_agent_id)
+        .eq("org_id", session.org.id)
+        .maybeSingle(),
+      supabase
+        .from("ai_agent_knowledge")
+        .select("title, content")
+        .eq("ai_agent_id", conversation.ai_agent_id)
+        .order("position"),
+      supabase
+        .from("messages")
+        .select("sender, body")
+        .eq("conversation_id", conversationId)
+        .order("created_at", { ascending: true }),
+    ]);
   if (!agent) {
     revalidatePath(path);
     return { error: null };
   }
-
-  const { data: history } = await supabase
-    .from("messages")
-    .select("sender, body")
-    .eq("conversation_id", conversationId)
-    .order("created_at", { ascending: true });
 
   const contact = conversation.contacts as unknown as {
     id: string;
@@ -75,16 +82,19 @@ export async function sendTestMessage(
     company: string | null;
     lifecycle: string;
     score: number;
+    notes: string | null;
   };
 
   try {
     const result = await runAgent({
       supabase,
       orgId: session.org.id,
+      userId: session.userId,
       conversationId,
       contact,
       agent,
       history: (history ?? []) as HistoryMessage[],
+      knowledge: knowledge ?? [],
     });
 
     await supabase.from("messages").insert({

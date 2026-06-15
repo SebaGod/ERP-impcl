@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { AgentForm } from "../agent-form";
 import { updateAgent, startTestConversation } from "../actions";
 import { DeleteAgentButton } from "./delete-agent-button";
+import { KnowledgeManager, type KnowledgeEntry } from "./knowledge-manager";
 
 export const metadata: Metadata = { title: "Agente" };
 
@@ -21,12 +22,19 @@ export default async function AgenteDetallePage({
   const session = await requireAdminContext();
   const supabase = await createClient();
 
-  const { data: agent } = await supabase
-    .from("ai_agents")
-    .select("id, name, goal, system_prompt, model, auto_reply")
-    .eq("id", id)
-    .eq("org_id", session.org.id)
-    .maybeSingle();
+  const [{ data: agent }, { data: knowledge }] = await Promise.all([
+    supabase
+      .from("ai_agents")
+      .select("id, name, personality, goal, additional_info, model, auto_reply")
+      .eq("id", id)
+      .eq("org_id", session.org.id)
+      .maybeSingle(),
+    supabase
+      .from("ai_agent_knowledge")
+      .select("id, title, content")
+      .eq("ai_agent_id", id)
+      .order("position"),
+  ]);
 
   if (!agent) notFound();
 
@@ -52,10 +60,10 @@ export default async function AgenteDetallePage({
 
       <Card>
         <CardHeader>
-          <CardTitle>Configuración</CardTitle>
+          <CardTitle>Instrucciones</CardTitle>
           <CardDescription>
-            Ajusta cómo se comporta. Para bajar costos usa Haiku; para casos
-            complejos, Opus.
+            Personalidad, objetivo e información de la empresa. Para bajar
+            costos usa Haiku; para casos complejos, Opus.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -63,12 +71,29 @@ export default async function AgenteDetallePage({
             action={updateAgent.bind(null, agent.id)}
             defaults={{
               name: agent.name,
+              personality: agent.personality,
               goal: agent.goal,
-              system_prompt: agent.system_prompt,
+              additional_info: agent.additional_info,
               model: agent.model,
               auto_reply: agent.auto_reply,
             }}
             submitLabel="Guardar cambios"
+          />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Base de conocimiento</CardTitle>
+          <CardDescription>
+            Temas que el agente puede consultar para responder: precios,
+            políticas, preguntas frecuentes, catálogo, etc.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <KnowledgeManager
+            agentId={agent.id}
+            entries={(knowledge ?? []) as KnowledgeEntry[]}
           />
         </CardContent>
       </Card>
