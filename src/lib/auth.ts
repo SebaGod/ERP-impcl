@@ -183,7 +183,8 @@ export async function requireAdminContext() {
 export async function requireAgencyContext() {
   const session = await getSessionContext();
   if (!session) redirect("/login");
-  if (!session.agency) redirect("/onboarding");
+  // Sin agencia: /agencia ofrece crearla
+  if (!session.agency) redirect("/agencia");
   return session as SessionContext & {
     agency: NonNullable<SessionContext["agency"]>;
   };
