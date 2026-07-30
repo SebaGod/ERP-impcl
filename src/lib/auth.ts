@@ -1,8 +1,23 @@
 import { cache } from "react";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
 export type OrgRole = "admin" | "operario";
+export type AgencyRole = "owner" | "admin";
+
+/** Cookie que fija la subcuenta activa al navegar como agencia */
+export const ACTIVE_ORG_COOKIE = "active_org";
+
+export interface OrgSummary {
+  id: string;
+  name: string;
+  slug: string;
+  /** Rol del usuario en la org; las subcuentas de agencia se operan como admin */
+  role: OrgRole;
+  /** true si el acceso proviene de la agencia y no de una membresía directa */
+  viaAgency: boolean;
+}
 
 export interface SessionContext {
   userId: string;
@@ -17,12 +32,33 @@ export interface SessionContext {
     settings: { tax_rate: number; quote_validity_days: number };
   } | null;
   role: OrgRole | null;
+  /** Agencia a la que pertenece el usuario, si es staff */
+  agency: { id: string; name: string; slug: string; role: AgencyRole } | null;
+  /** Todas las organizaciones a las que puede entrar (para el switcher) */
+  orgs: OrgSummary[];
+}
+
+interface OrgRow {
+  id: string;
+  name: string;
+  slug: string;
+  rut: string | null;
+  logo_url: string | null;
+  settings: { tax_rate: number; quote_validity_days: number };
+}
+
+/** supabase-js sin tipos generados infiere las relaciones como arreglo */
+function firstRelation<T>(value: unknown): T | undefined {
+  return (Array.isArray(value) ? value[0] : value) as T | undefined;
 }
 
 /**
- * Usuario autenticado + su organización activa y rol.
- * MVP: un usuario pertenece normalmente a una sola organización;
- * si tuviera varias se usa la más antigua. Cacheado por request.
+ * Usuario autenticado, su organización activa y su rol.
+ *
+ * Un usuario alcanza organizaciones por dos vías: membresía directa
+ * (organization_members) o por ser staff de la agencia dueña de la
+ * subcuenta. La organización activa se fija con una cookie; si no hay
+ * cookie válida se usa la primera accesible. Cacheado por request.
  */
 export const getSessionContext = cache(
   async (): Promise<SessionContext | null> => {
@@ -32,48 +68,92 @@ export const getSessionContext = cache(
     } = await supabase.auth.getUser();
     if (!user) return null;
 
-    const [{ data: profile }, { data: membership }] = await Promise.all([
-      supabase.from("profiles").select("full_name").eq("id", user.id).single(),
-      supabase
-        .from("organization_members")
-        .select(
-          "role, organizations (id, name, slug, rut, logo_url, settings)"
-        )
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: true })
-        .limit(1)
-        .maybeSingle(),
-    ]);
+    const [{ data: profile }, { data: memberships }, { data: agencyMembership }] =
+      await Promise.all([
+        supabase.from("profiles").select("full_name").eq("id", user.id).single(),
+        supabase
+          .from("organization_members")
+          .select("role, organizations (id, name, slug, rut, logo_url, settings)")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: true }),
+        supabase
+          .from("agency_members")
+          .select("role, agencies (id, name, slug)")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: true })
+          .limit(1)
+          .maybeSingle(),
+      ]);
 
-    interface OrgRow {
-      id: string;
-      name: string;
-      slug: string;
-      rut: string | null;
-      logo_url: string | null;
-      settings: { tax_rate: number; quote_validity_days: number };
+    const agencyRaw = firstRelation<{ id: string; name: string; slug: string }>(
+      agencyMembership?.agencies
+    );
+    const agency = agencyRaw
+      ? {
+          id: agencyRaw.id,
+          name: agencyRaw.name,
+          slug: agencyRaw.slug,
+          role: (agencyMembership?.role as AgencyRole) ?? "admin",
+        }
+      : null;
+
+    // Subcuentas de la agencia (RLS ya limita a las que puede ver)
+    const { data: subaccounts } = agency
+      ? await supabase
+          .from("organizations")
+          .select("id, name, slug, rut, logo_url, settings")
+          .eq("agency_id", agency.id)
+          .order("name")
+      : { data: null };
+
+    // Índice de orgs accesibles, sin duplicar las que además son membresía
+    const byId = new Map<string, { row: OrgRow; role: OrgRole; viaAgency: boolean }>();
+
+    for (const membership of memberships ?? []) {
+      const row = firstRelation<OrgRow>(membership.organizations);
+      if (!row) continue;
+      byId.set(row.id, {
+        row,
+        role: (membership.role as OrgRole) ?? "operario",
+        viaAgency: false,
+      });
     }
-    // supabase-js sin tipos generados infiere la relación como arreglo
-    const orgRaw = membership?.organizations as unknown;
-    const org = (Array.isArray(orgRaw) ? orgRaw[0] : orgRaw) as
-      | OrgRow
-      | undefined;
+    for (const row of (subaccounts ?? []) as OrgRow[]) {
+      if (byId.has(row.id)) continue;
+      byId.set(row.id, { row, role: "admin", viaAgency: true });
+    }
+
+    const entries = [...byId.values()];
+    const orgs: OrgSummary[] = entries.map(({ row, role, viaAgency }) => ({
+      id: row.id,
+      name: row.name,
+      slug: row.slug,
+      role,
+      viaAgency,
+    }));
+
+    const cookieStore = await cookies();
+    const requested = cookieStore.get(ACTIVE_ORG_COOKIE)?.value;
+    const active =
+      entries.find(({ row }) => row.id === requested) ?? entries[0] ?? null;
 
     return {
       userId: user.id,
       email: user.email ?? "",
       fullName: profile?.full_name ?? "",
-      org: org
+      org: active
         ? {
-            id: org.id,
-            name: org.name,
-            slug: org.slug,
-            rut: org.rut,
-            logoUrl: org.logo_url,
-            settings: org.settings,
+            id: active.row.id,
+            name: active.row.name,
+            slug: active.row.slug,
+            rut: active.row.rut,
+            logoUrl: active.row.logo_url,
+            settings: active.row.settings,
           }
         : null,
-      role: (membership?.role as OrgRole) ?? null,
+      role: active?.role ?? null,
+      agency,
+      orgs,
     };
   }
 );
@@ -82,7 +162,10 @@ export const getSessionContext = cache(
 export async function requireOrgContext() {
   const session = await getSessionContext();
   if (!session) redirect("/login");
-  if (!session.org || !session.role) redirect("/onboarding");
+  // Staff de agencia sin subcuentas todavía: al panel de agencia
+  if (!session.org || !session.role) {
+    redirect(session.agency ? "/agencia" : "/onboarding");
+  }
   return session as SessionContext & {
     org: NonNullable<SessionContext["org"]>;
     role: OrgRole;
@@ -94,4 +177,14 @@ export async function requireAdminContext() {
   const session = await requireOrgContext();
   if (session.role !== "admin") redirect("/tablero");
   return session;
+}
+
+/** Sesión con agencia garantizada (para las rutas /agencia) */
+export async function requireAgencyContext() {
+  const session = await getSessionContext();
+  if (!session) redirect("/login");
+  if (!session.agency) redirect("/onboarding");
+  return session as SessionContext & {
+    agency: NonNullable<SessionContext["agency"]>;
+  };
 }

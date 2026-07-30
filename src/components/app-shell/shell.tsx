@@ -7,11 +7,15 @@ import { LogOut, Menu, X } from "lucide-react";
 import { brand } from "@/config/brand";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
-import type { OrgRole } from "@/lib/auth";
+import type { OrgRole, OrgSummary } from "@/lib/auth";
 import { navItemsForRole } from "./nav";
+import { OrgSwitcher } from "./org-switcher";
 
 interface ShellProps {
   orgName: string;
+  orgId: string;
+  orgs: OrgSummary[];
+  agencyName: string | null;
   userName: string;
   userEmail: string;
   role: OrgRole;
@@ -25,6 +29,9 @@ const roleLabels: Record<OrgRole, string> = {
 
 export function Shell({
   orgName,
+  orgId,
+  orgs,
+  agencyName,
   userName,
   userEmail,
   role,
@@ -94,16 +101,16 @@ export function Shell({
     <div className="flex min-h-dvh w-full">
       {/* Sidebar escritorio */}
       <aside className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col border-r border-border bg-card md:flex">
-        <div className="flex items-center gap-2.5 border-b border-border p-4">
-          <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-sm font-bold text-primary-foreground">
+        <div className="flex items-center gap-2 border-b border-border p-3">
+          <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-sm font-bold text-primary-foreground">
             {brand.name.charAt(0)}
           </div>
-          <div className="min-w-0">
-            <p className="truncate text-sm font-semibold">{orgName}</p>
-            <p className="truncate text-xs text-muted-foreground">
-              {brand.name}
-            </p>
-          </div>
+          <OrgSwitcher
+            orgs={orgs}
+            activeOrgId={orgId}
+            activeOrgName={orgName}
+            agencyName={agencyName}
+          />
         </div>
         {nav}
         {userFooter}
@@ -117,11 +124,17 @@ export function Shell({
             onClick={() => setMobileOpen(false)}
           />
           <aside className="absolute inset-y-0 left-0 flex w-72 flex-col bg-card shadow-xl">
-            <div className="flex items-center justify-between border-b border-border p-4">
-              <p className="text-sm font-semibold">{orgName}</p>
+            <div className="flex items-center gap-2 border-b border-border p-3">
+              <OrgSwitcher
+                orgs={orgs}
+                activeOrgId={orgId}
+                activeOrgName={orgName}
+                agencyName={agencyName}
+                onNavigate={() => setMobileOpen(false)}
+              />
               <button
                 onClick={() => setMobileOpen(false)}
-                className="rounded-lg p-2 text-muted-foreground hover:bg-muted"
+                className="shrink-0 rounded-lg p-2 text-muted-foreground hover:bg-muted"
               >
                 <X className="size-5" />
               </button>

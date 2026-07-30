@@ -9,11 +9,16 @@ export default async function AppLayout({
 }) {
   const session = await getSessionContext();
   if (!session) redirect("/login");
-  if (!session.org || !session.role) redirect("/onboarding");
+  if (!session.org || !session.role) {
+    redirect(session.agency ? "/agencia" : "/onboarding");
+  }
 
   return (
     <Shell
       orgName={session.org.name}
+      orgId={session.org.id}
+      orgs={session.orgs}
+      agencyName={session.agency?.name ?? null}
       userName={session.fullName}
       userEmail={session.email}
       role={session.role}
