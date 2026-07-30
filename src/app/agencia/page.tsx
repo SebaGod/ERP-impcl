@@ -1,20 +1,66 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Building2, Contact, Plus, Target } from "lucide-react";
+import {
+  Building2,
+  Contact,
+  Layers,
+  MessagesSquare,
+  Plus,
+  Target,
+  TrendingUp,
+  Wallet,
+  type LucideIcon,
+} from "lucide-react";
 import { getSessionContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { buttonClasses } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { CreateAgencyForm, EnterOrgButton } from "./agency-forms";
+import { Card, CardContent } from "@/components/ui/card";
+import { formatCLP } from "@/lib/format";
+import type { AgencyOverview, SubaccountRow } from "@/lib/agency/types";
+import { CreateAgencyForm } from "./agency-forms";
+import { SubaccountsTable } from "./subaccounts-table";
 
 export const metadata: Metadata = { title: "Panel de agencia" };
 
-interface Subaccount {
-  id: string;
-  name: string;
-  rut: string | null;
-  created_at: string;
+const emptyOverview: AgencyOverview = {
+  subaccounts: 0,
+  active: 0,
+  trial: 0,
+  paused: 0,
+  mrr: 0,
+  contacts: 0,
+  open_opportunities: 0,
+  pipeline_value: 0,
+  open_conversations: 0,
+  snapshots: 0,
+};
+
+function formatCount(value: number): string {
+  return value.toLocaleString("es-CL");
+}
+
+function Kpi({
+  icon: Icon,
+  label,
+  value,
+  hint,
+}: {
+  icon: LucideIcon;
+  label: string;
+  value: string;
+  hint?: string;
+}) {
+  return (
+    <Card className="p-4">
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <Icon className="size-4" />
+        <span className="truncate">{label}</span>
+      </div>
+      <p className="mt-2 text-2xl font-bold tabular-nums">{value}</p>
+      {hint && <p className="mt-1 text-xs text-muted-foreground">{hint}</p>}
+    </Card>
+  );
 }
 
 export default async function AgenciaPage() {
@@ -41,111 +87,109 @@ export default async function AgenciaPage() {
     );
   }
 
+  const agency = session.agency;
   const supabase = await createClient();
-  const { data: subaccounts } = await supabase
-    .from("organizations")
-    .select("id, name, rut, created_at")
-    .eq("agency_id", session.agency.id)
-    .order("name");
 
-  const rows = (subaccounts ?? []) as Subaccount[];
+  const [overviewResult, subaccountsResult] = await Promise.all([
+    supabase.rpc("agency_overview", { p_agency: agency.id }),
+    supabase.rpc("agency_subaccounts", { p_agency: agency.id }),
+  ]);
 
-  // Métricas por subcuenta (solo conteos; la RLS ya acota a la agencia)
-  const stats = await Promise.all(
-    rows.map(async (org) => {
-      const [contacts, opportunities] = await Promise.all([
-        supabase
-          .from("contacts")
-          .select("id", { count: "exact", head: true })
-          .eq("org_id", org.id),
-        supabase
-          .from("opportunities")
-          .select("id", { count: "exact", head: true })
-          .eq("org_id", org.id)
-          .eq("status", "abierta"),
-      ]);
-      return {
-        orgId: org.id,
-        contacts: contacts.count ?? 0,
-        opportunities: opportunities.count ?? 0,
-      };
-    })
-  );
-  const statsById = new Map(stats.map((s) => [s.orgId, s]));
+  const overview =
+    (overviewResult.data as AgencyOverview | null) ?? emptyOverview;
+  const rows = (subaccountsResult.data as SubaccountRow[] | null) ?? [];
 
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">{session.agency.name}</h1>
+          <h1 className="text-2xl font-bold">{agency.name}</h1>
           <p className="text-sm text-muted-foreground">
             {rows.length === 0
               ? "Aún no tienes subcuentas"
-              : `${rows.length} ${rows.length === 1 ? "subcuenta" : "subcuentas"}`}
+              : `Cartera de ${formatCount(rows.length)} ${
+                  rows.length === 1 ? "cliente" : "clientes"
+                }`}
           </p>
         </div>
-        <Link href="/agencia/nueva" className={buttonClasses("primary", "md")}>
-          <Plus className="size-4" /> Nueva subcuenta
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href="/agencia/plantillas"
+            className={buttonClasses("secondary", "md")}
+          >
+            <Layers className="size-4" /> Plantillas
+          </Link>
+          <Link href="/agencia/nueva" className={buttonClasses("primary", "md")}>
+            <Plus className="size-4" /> Nueva subcuenta
+          </Link>
+        </div>
       </div>
 
       {rows.length === 0 ? (
         <Card>
-          <CardContent className="flex flex-col items-center gap-3 py-14 text-center">
+          <CardContent className="mx-auto flex max-w-md flex-col items-center gap-3 py-14 text-center">
             <Building2 className="size-8 text-muted-foreground" />
-            <div>
+            <div className="flex flex-col gap-1">
               <p className="font-medium">Crea la primera subcuenta</p>
               <p className="text-sm text-muted-foreground">
-                Cada cliente tiene su propio espacio, aislado del resto.
+                Cada cliente vive en su propia subcuenta, con sus contactos,
+                embudos y conversaciones aislados del resto. Tú entras y sales
+                de ellas desde este panel.
               </p>
             </div>
             <Link
               href="/agencia/nueva"
               className={buttonClasses("primary", "md")}
             >
-              <Plus className="size-4" /> Nueva subcuenta
+              <Plus className="size-4" /> Crear la primera subcuenta
             </Link>
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {rows.map((org) => {
-            const stat = statsById.get(org.id);
-            return (
-              <Card key={org.id} className="flex flex-col">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-sm font-semibold text-primary">
-                      {org.name.charAt(0).toUpperCase()}
-                    </span>
-                    <span className="min-w-0 truncate">{org.name}</span>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="flex flex-1 flex-col justify-between gap-4">
-                  <div className="flex gap-5 text-sm">
-                    <span
-                      className="flex items-center gap-1.5 text-muted-foreground"
-                      title="Contactos"
-                    >
-                      <Contact className="size-4" />
-                      {stat?.contacts ?? 0}
-                    </span>
-                    <span
-                      className="flex items-center gap-1.5 text-muted-foreground"
-                      title="Oportunidades abiertas"
-                    >
-                      <Target className="size-4" />
-                      {stat?.opportunities ?? 0}
-                    </span>
-                  </div>
-                  <div>
-                    <EnterOrgButton orgId={org.id} />
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
+        <>
+          <div className="grid gap-3 grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
+            <Kpi
+              icon={Wallet}
+              label="MRR"
+              value={formatCLP(overview.mrr)}
+              hint="Ingreso mensual recurrente"
+            />
+            <Kpi
+              icon={Building2}
+              label="Subcuentas"
+              value={formatCount(overview.subaccounts)}
+              hint={`${formatCount(overview.active)} activas / ${formatCount(
+                overview.trial
+              )} prueba / ${formatCount(overview.paused)} pausadas`}
+            />
+            <Kpi
+              icon={Contact}
+              label="Contactos"
+              value={formatCount(overview.contacts)}
+              hint="En todas las subcuentas"
+            />
+            <Kpi
+              icon={Target}
+              label="Oportunidades abiertas"
+              value={formatCount(overview.open_opportunities)}
+              hint="Negocios en curso"
+            />
+            <Kpi
+              icon={TrendingUp}
+              label="Valor del pipeline"
+              value={formatCLP(overview.pipeline_value)}
+              hint="Suma de oportunidades abiertas"
+            />
+            <Kpi
+              icon={MessagesSquare}
+              label="Conversaciones abiertas"
+              value={formatCount(overview.open_conversations)}
+              hint="Pendientes de respuesta"
+            />
+          </div>
+
+          <SubaccountsTable rows={rows} />
+        </>
       )}
     </div>
   );
