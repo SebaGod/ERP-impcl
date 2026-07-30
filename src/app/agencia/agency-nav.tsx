@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, LayoutGrid, Layers } from "lucide-react";
+import { Activity, LayoutGrid, Layers, TerminalSquare } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const tabs = [
   { href: "/agencia", label: "Resumen", icon: LayoutGrid, exact: true },
   { href: "/agencia/plantillas", label: "Plantillas", icon: Layers },
+  { href: "/agencia/consola", label: "Consola", icon: TerminalSquare },
   { href: "/agencia/actividad", label: "Actividad", icon: Activity },
 ];
 

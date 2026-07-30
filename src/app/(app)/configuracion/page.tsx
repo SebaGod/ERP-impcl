@@ -1,8 +1,11 @@
 import type { Metadata } from "next";
+import Link from "next/link";
+import { Plug } from "lucide-react";
 import { requireAdminContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
+import { buttonClasses } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { OrgForm } from "./org-form";
 import { InviteForm } from "./invite-form";
@@ -46,6 +49,24 @@ export default async function ConfiguracionPage() {
         </CardHeader>
         <CardContent>
           <OrgForm name={session.org.name} rut={session.org.rut ?? ""} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Integraciones</CardTitle>
+          <CardDescription>
+            Conecta WhatsApp, Instagram y Messenger para que todo llegue a un
+            mismo inbox y tu agente pueda responder.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Link
+            href="/configuracion/integraciones"
+            className={buttonClasses("secondary", "md")}
+          >
+            <Plug className="size-4" /> Administrar integraciones
+          </Link>
         </CardContent>
       </Card>
 
