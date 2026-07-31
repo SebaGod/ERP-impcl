@@ -68,10 +68,10 @@ import {
 } from "@/lib/crm/merge-tags";
 import {
   alternarAutomatizacion,
-  eliminarAutomatizacion,
   guardarAutomatizacion,
   type ActionState,
-} from "./actions";
+} from "@/lib/automation/actions";
+import { BuilderChrome } from "./builder-chrome";
 
 const initialState: ActionState = { error: null };
 
@@ -222,6 +222,21 @@ export function AutomationBuilder({
   const trigger = getTrigger(triggerKind);
   const camposEvento = trigger?.camposDisponibles ?? [];
 
+  /**
+   * ¿Hay cambios sin guardar? Se compara el flujo actual contra el que se
+   * cargó. El nombre y la descripción no entran: son inputs no controlados y
+   * seguirlos obligaría a re-renderizar el lienzo con cada tecla.
+   */
+  const sucio = useMemo(() => {
+    const actual = JSON.stringify({ triggerKind, conditions, acciones });
+    const original = JSON.stringify({
+      triggerKind: inicial?.trigger_kind ?? triggers[0].kind,
+      conditions: inicial?.conditions ?? [],
+      acciones: inicial?.actions ?? [],
+    });
+    return actual !== original;
+  }, [triggerKind, conditions, acciones, inicial]);
+
   const camposPersonalizados = useMemo(
     () => campos.map((def) => ({ clave: tagDeCampo(def).key, label: def.label })),
     [campos]
@@ -365,7 +380,7 @@ export function AutomationBuilder({
   const IconoTrigger = trigger ? ICONS[trigger.icon] ?? Zap : Zap;
 
   return (
-    <form action={formAction} className="flex flex-col gap-5">
+    <form action={formAction} className="flex min-h-0 flex-1 flex-col">
       {inicial && <input type="hidden" name="id" value={inicial.id} />}
       <input type="hidden" name="trigger_kind" value={triggerKind} />
       <input
@@ -379,34 +394,32 @@ export function AutomationBuilder({
         value={JSON.stringify(acciones)}
       />
 
-      <section className="mx-auto w-full max-w-2xl rounded-xl border border-border bg-card p-3 shadow-sm">
-        <Label htmlFor="automation-name" className="sr-only">
-          Nombre de la automatización
-        </Label>
-        <Input
-          id="automation-name"
-          name="name"
-          required
-          maxLength={80}
-          defaultValue={inicial?.name ?? ""}
-          placeholder="Nombre de la automatización"
-          className="h-11 border-transparent bg-transparent px-2 text-lg font-semibold transition-colors hover:bg-muted/60 focus-visible:border-border focus-visible:bg-card"
-        />
-        <Label htmlFor="automation-description" className="sr-only">
-          Descripción
-        </Label>
-        <Input
-          id="automation-description"
-          name="description"
-          maxLength={160}
-          defaultValue={inicial?.description ?? ""}
-          placeholder="Para qué sirve, en una línea (opcional)"
-          className="h-9 border-transparent bg-transparent px-2 text-sm text-muted-foreground transition-colors hover:bg-muted/60 focus-visible:border-border focus-visible:bg-card"
-        />
-      </section>
+      <BuilderChrome
+        automationId={inicial?.id ?? null}
+        nombreInicial={inicial?.name ?? ""}
+        activa={inicial?.is_active ?? false}
+        guardado={!sucio}
+        pendiente={pending}
+      />
 
-      {/* Lienzo del flujo */}
-      <div className="mx-auto w-full max-w-2xl">
+      {/* Lienzo: ocupa todo el alto restante y hace su propio scroll */}
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-8">
+        <div className="mx-auto w-full max-w-2xl pb-4">
+          <Label htmlFor="automation-description" className="sr-only">
+            Descripción
+          </Label>
+          <Input
+            id="automation-description"
+            name="description"
+            maxLength={160}
+            defaultValue={inicial?.description ?? ""}
+            placeholder="Para qué sirve, en una línea (opcional)"
+            className="h-9 border-transparent bg-transparent px-2 text-center text-sm text-muted-foreground transition-colors hover:bg-muted/60 focus-visible:border-border focus-visible:bg-card"
+          />
+        </div>
+
+        {/* Flujo */}
+        <div className="mx-auto w-full max-w-2xl">
         {/* Disparador */}
         <div
           className={cn(
@@ -691,25 +704,21 @@ export function AutomationBuilder({
         </div>
       </div>
 
-      <div className="sticky bottom-4 mx-auto flex w-full max-w-2xl flex-col gap-3 rounded-xl border border-border bg-card/95 p-4 shadow-lg backdrop-blur sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex min-w-0 flex-col gap-0.5">
-          <p className="truncate text-sm font-medium">{resumen}</p>
+      </div>
+
+      {/* Pie fijo: resumen del flujo y errores de guardado */}
+      <footer className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-border bg-card px-4 py-2">
+        <p className="truncate text-xs text-muted-foreground">{resumen}</p>
+        {state.error ? (
+          <p className="text-xs font-medium text-destructive">{state.error}</p>
+        ) : (
           <p className="text-xs text-muted-foreground">
             {inicial
               ? "Los cambios se aplican a la próxima ejecución."
-              : "Se guarda pausada: actívala desde el listado cuando quieras que empiece a correr."}
+              : "Se guarda como borrador: publícala cuando quieras que empiece a correr."}
           </p>
-          {state.error && (
-            <p className="text-sm text-destructive">{state.error}</p>
-          )}
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {inicial && <BotonEliminar id={inicial.id} />}
-          <Button type="submit" disabled={pending}>
-            {pending ? "Guardando…" : "Guardar"}
-          </Button>
-        </div>
-      </div>
+        )}
+      </footer>
     </form>
   );
 }
@@ -1262,35 +1271,6 @@ function InsertadorDeVariables({
         </p>
       )}
     </div>
-  );
-}
-
-function BotonEliminar({ id }: { id: string }) {
-  const [pending, startTransition] = useTransition();
-
-  function eliminar() {
-    if (
-      !window.confirm(
-        "¿Eliminar esta automatización? Se borra también su historial de ejecuciones."
-      )
-    ) {
-      return;
-    }
-    startTransition(async () => {
-      await eliminarAutomatizacion(id);
-    });
-  }
-
-  return (
-    <Button
-      type="button"
-      variant="ghost"
-      onClick={eliminar}
-      disabled={pending}
-      className="text-destructive"
-    >
-      <Trash2 className="size-4" /> Eliminar
-    </Button>
   );
 }
 

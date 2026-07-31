@@ -17,7 +17,7 @@ import {
   describirAutomatizacion,
   type AutomationRow,
 } from "@/lib/automation/catalog";
-import { ToggleAutomation } from "./automation-builder";
+import { ToggleAutomation } from "@/components/automations/automation-builder";
 
 export const metadata: Metadata = { title: "Automatizaciones" };
 
@@ -180,7 +180,7 @@ export default async function AutomatizacionesPage() {
                         <Badge
                           variant={regla.is_active ? "success" : "outline"}
                         >
-                          {regla.is_active ? "Activa" : "Pausada"}
+                          {regla.is_active ? "Activa" : "Borrador"}
                         </Badge>
                       </div>
                       {regla.description && (

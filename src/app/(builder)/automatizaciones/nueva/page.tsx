@@ -1,6 +1,4 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
 import { requireAdminContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import type { AutomationRow } from "@/lib/automation/catalog";
@@ -10,7 +8,7 @@ import {
   type StageOption,
   type TagOption,
   type UserOption,
-} from "../automation-builder";
+} from "@/components/automations/automation-builder";
 
 export const metadata: Metadata = { title: "Nueva automatización" };
 
@@ -79,33 +77,15 @@ export default async function NuevaAutomatizacionPage({
     };
   });
 
+  // El lienzo trae su propia cabecera (volver, nombre, publicar, guardar),
+  // así que aquí no va ningún encabezado de página.
   return (
-    <div className="mx-auto flex max-w-4xl flex-col gap-4">
-      <div className="flex flex-col gap-2">
-        <Link
-          href="/automatizaciones"
-          className="flex w-fit items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="size-4" /> Automatizaciones
-        </Link>
-        <div>
-          <h1 className="text-2xl font-bold">
-            {inicial ? "Editar automatización" : "Nueva automatización"}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Arma la regla en tres pasos: qué evento la dispara, qué condiciones
-            deben cumplirse y qué hace el sistema cuando ocurre.
-          </p>
-        </div>
-      </div>
-
-      <AutomationBuilder
-        stages={stages}
-        tags={tags}
-        usuarios={usuarios}
-        campos={campos}
-        inicial={inicial}
-      />
-    </div>
+    <AutomationBuilder
+      stages={stages}
+      tags={tags}
+      usuarios={usuarios}
+      campos={campos}
+      inicial={inicial}
+    />
   );
 }
