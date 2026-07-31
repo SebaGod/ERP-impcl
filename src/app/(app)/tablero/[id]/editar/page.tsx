@@ -27,7 +27,7 @@ export default async function EditarOrdenPage({
       .eq("org_id", session.org.id)
       .maybeSingle(),
     supabase
-      .from("clients")
+      .from("contacts")
       .select("id, name")
       .eq("org_id", session.org.id)
       .order("name"),

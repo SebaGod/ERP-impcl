@@ -24,7 +24,7 @@ export async function getReceivables(
   const [{ data: workOrders }, { data: payments }] = await Promise.all([
     supabase
       .from("work_orders")
-      .select("id, code, title, amount_net, payment_due_date, clients (name)")
+      .select("id, code, title, amount_net, payment_due_date, clients:contacts (name)")
       .eq("org_id", orgId)
       .gt("amount_net", 0),
     supabase

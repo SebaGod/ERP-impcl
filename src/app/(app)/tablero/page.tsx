@@ -38,7 +38,7 @@ export default async function TableroPage() {
       supabase
         .from("work_orders")
         .select(
-          "id, code, title, due_date, amount_net, stage_id, board_position, completed_at, clients (name), assigned:profiles!work_orders_assigned_to_fkey (full_name)"
+          "id, code, title, due_date, amount_net, stage_id, board_position, completed_at, clients:contacts (name), assigned:profiles!work_orders_assigned_to_fkey (full_name)"
         )
         .eq("org_id", session.org.id)
         .order("board_position"),
@@ -46,7 +46,7 @@ export default async function TableroPage() {
       isAdmin
         ? supabase
             .from("quotes")
-            .select("id, code, gross_total, clients (name)")
+            .select("id, code, gross_total, clients:contacts (name)")
             .eq("org_id", session.org.id)
             .eq("status", "enviada")
             .order("created_at", { ascending: false })

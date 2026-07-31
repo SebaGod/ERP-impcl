@@ -23,7 +23,7 @@ export default async function CotizacionesPage() {
   const { data: quotes } = await supabase
     .from("quotes")
     .select(
-      "id, code, status, issue_date, expires_at, net_total, gross_total, clients (name)"
+      "id, code, status, issue_date, expires_at, net_total, gross_total, clients:contacts (name)"
     )
     .eq("org_id", session.org.id)
     .order("created_at", { ascending: false });

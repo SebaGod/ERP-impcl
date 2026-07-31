@@ -55,7 +55,7 @@ export async function GET(request: Request) {
     const { data } = await supabase
       .from("work_orders")
       .select(
-        "code, title, amount_net, created_at, clients (name), work_order_stages (name)"
+        "code, title, amount_net, created_at, clients:contacts (name), work_order_stages (name)"
       )
       .eq("org_id", session.org.id)
       .gte("created_at", period.from)

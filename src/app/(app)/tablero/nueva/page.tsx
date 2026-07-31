@@ -17,7 +17,7 @@ export default async function NuevaOrdenPage() {
   const [{ data: clients }, { data: stages }, { data: members }] =
     await Promise.all([
       supabase
-        .from("clients")
+        .from("contacts")
         .select("id, name")
         .eq("org_id", session.org.id)
         .order("name"),
@@ -40,7 +40,7 @@ export default async function NuevaOrdenPage() {
           Toda orden de trabajo pertenece a un cliente. Crea el primero y
           vuelve aquí.
         </p>
-        <Link href="/clientes/nuevo" className={buttonClasses("primary", "md")}>
+        <Link href="/contactos/nuevo" className={buttonClasses("primary", "md")}>
           Crear cliente
         </Link>
       </div>

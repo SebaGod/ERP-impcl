@@ -22,6 +22,8 @@ export default async function AppLayout({
       userName={session.fullName}
       userEmail={session.email}
       role={session.role}
+      roleLabel={session.roleLabel}
+      permisos={session.permisos}
     >
       {children}
     </Shell>

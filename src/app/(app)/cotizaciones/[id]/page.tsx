@@ -32,7 +32,7 @@ export default async function CotizacionDetallePage({
   const { data: quote } = await supabase
     .from("quotes")
     .select(
-      "id, code, status, client_id, issue_date, expires_at, tax_rate, net_total, tax_total, gross_total, est_cost_total, notes, public_token, clients (name)"
+      "id, code, status, client_id, issue_date, expires_at, tax_rate, net_total, tax_total, gross_total, est_cost_total, notes, public_token, clients:contacts (name)"
     )
     .eq("id", id)
     .eq("org_id", session.org.id)
@@ -48,7 +48,7 @@ export default async function CotizacionDetallePage({
         .eq("quote_id", id)
         .order("position"),
       supabase
-        .from("clients")
+        .from("contacts")
         .select("id, name")
         .eq("org_id", session.org.id)
         .order("name"),

@@ -57,7 +57,7 @@ export default async function OrdenDetallePage({
   const { data: workOrder } = await supabase
     .from("work_orders")
     .select(
-      "id, code, title, description, stage_id, due_date, amount_net, tax_rate, completed_at, created_at, assigned_to, clients (id, name)"
+      "id, code, title, description, stage_id, due_date, amount_net, tax_rate, completed_at, created_at, assigned_to, clients:contacts (id, name)"
     )
     .eq("id", id)
     .eq("org_id", session.org.id)

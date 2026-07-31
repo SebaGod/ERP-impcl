@@ -25,7 +25,7 @@ export default async function ReportesPage({
     await Promise.all([
       supabase
         .from("work_orders")
-        .select("id, amount_net, clients (name)")
+        .select("id, amount_net, clients:contacts (name)")
         .eq("org_id", session.org.id)
         .gte("created_at", period.from)
         .lt("created_at", period.toExclusive),

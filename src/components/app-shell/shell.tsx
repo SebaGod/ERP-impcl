@@ -8,7 +8,8 @@ import { brand } from "@/config/brand";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import type { OrgRole, OrgSummary } from "@/lib/auth";
-import { navItemsForRole } from "./nav";
+import type { ModuleKey } from "@/lib/auth/permissions";
+import { navSections } from "./nav";
 import { OrgSwitcher } from "./org-switcher";
 
 interface ShellProps {
@@ -19,6 +20,8 @@ interface ShellProps {
   userName: string;
   userEmail: string;
   role: OrgRole;
+  roleLabel?: string | null;
+  permisos: ModuleKey[];
   children: React.ReactNode;
 }
 
@@ -35,12 +38,14 @@ export function Shell({
   userName,
   userEmail,
   role,
+  roleLabel,
+  permisos,
   children,
 }: ShellProps) {
   const pathname = usePathname();
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const items = navItemsForRole(role);
+  const sections = navSections(permisos);
 
   async function handleLogout() {
     const supabase = createClient();
@@ -50,27 +55,37 @@ export function Shell({
   }
 
   const nav = (
-    <nav className="flex flex-1 flex-col gap-1 p-3">
-      {items.map((item) => {
-        const active =
-          pathname === item.href || pathname.startsWith(`${item.href}/`);
-        return (
-          <Link
-            key={item.href}
-            href={item.href}
-            onClick={() => setMobileOpen(false)}
-            className={cn(
-              "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-              active
-                ? "bg-primary/10 text-primary"
-                : "text-muted-foreground hover:bg-muted hover:text-foreground"
-            )}
-          >
-            <item.icon className="size-4.5 shrink-0" />
-            {item.label}
-          </Link>
-        );
-      })}
+    <nav className="flex flex-1 flex-col gap-4 overflow-y-auto p-3">
+      {sections.map((section, i) => (
+        <div key={section.group} className="flex flex-col gap-1">
+          {/* La primera sección no lleva encabezado: es la principal */}
+          {i > 0 && (
+            <p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+              {section.label}
+            </p>
+          )}
+          {section.items.map((item) => {
+            const active =
+              pathname === item.href || pathname.startsWith(`${item.href}/`);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={() => setMobileOpen(false)}
+                className={cn(
+                  "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                  active
+                    ? "bg-primary/10 text-primary"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                )}
+              >
+                <item.icon className="size-4.5 shrink-0" />
+                {item.label}
+              </Link>
+            );
+          })}
+        </div>
+      ))}
     </nav>
   );
 
@@ -83,7 +98,7 @@ export function Shell({
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium">{userName || userEmail}</p>
           <p className="truncate text-xs text-muted-foreground">
-            {roleLabels[role]}
+            {roleLabel || roleLabels[role]}
           </p>
         </div>
         <button

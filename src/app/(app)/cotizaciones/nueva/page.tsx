@@ -14,7 +14,7 @@ export default async function NuevaCotizacionPage() {
   const supabase = await createClient();
 
   const { data: clients } = await supabase
-    .from("clients")
+    .from("contacts")
     .select("id, name")
     .eq("org_id", session.org.id)
     .order("name");
@@ -26,7 +26,7 @@ export default async function NuevaCotizacionPage() {
         <p className="text-muted-foreground">
           Toda cotización se emite a un cliente. Crea el primero y vuelve aquí.
         </p>
-        <Link href="/clientes/nuevo" className={buttonClasses("primary", "md")}>
+        <Link href="/contactos/nuevo" className={buttonClasses("primary", "md")}>
           Crear cliente
         </Link>
       </div>

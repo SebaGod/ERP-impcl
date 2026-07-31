@@ -30,7 +30,7 @@ export default async function InicioPage() {
       .select("*", { count: "exact", head: true })
       .eq("org_id", session.org.id),
     supabase
-      .from("clients")
+      .from("contacts")
       .select("*", { count: "exact", head: true })
       .eq("org_id", session.org.id),
     supabase
@@ -75,7 +75,7 @@ export default async function InicioPage() {
     {
       label: "Registrar tu primer cliente",
       done: (clientCount ?? 0) > 0,
-      href: "/clientes",
+      href: "/contactos",
     },
     {
       label: "Crear tu primera orden de trabajo",

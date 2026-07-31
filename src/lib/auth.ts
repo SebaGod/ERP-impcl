@@ -2,6 +2,11 @@ import { cache } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import {
+  permisosEfectivos,
+  PERMISOS_ADMIN,
+  type ModuleKey,
+} from "@/lib/auth/permissions";
 
 export type OrgRole = "admin" | "operario";
 export type AgencyRole = "owner" | "admin";
@@ -32,6 +37,10 @@ export interface SessionContext {
     settings: { tax_rate: number; quote_validity_days: number };
   } | null;
   role: OrgRole | null;
+  /** Módulos visibles para esta persona en la organización activa */
+  permisos: ModuleKey[];
+  /** Nombre del perfil asignado ("Vendedor", "Contador"…), si tiene uno */
+  roleLabel: string | null;
   /** Agencia a la que pertenece el usuario, si es staff */
   agency: { id: string; name: string; slug: string; role: AgencyRole } | null;
   /** Todas las organizaciones a las que puede entrar (para el switcher) */
@@ -73,7 +82,9 @@ export const getSessionContext = cache(
         supabase.from("profiles").select("full_name").eq("id", user.id).single(),
         supabase
           .from("organization_members")
-          .select("role, organizations (id, name, slug, rut, logo_url, settings)")
+          .select(
+            "role, permissions, organizations (id, name, slug, rut, logo_url, settings), role_defs (label, permissions, base_role)"
+          )
           .eq("user_id", user.id)
           .order("created_at", { ascending: true }),
         supabase
@@ -107,20 +118,46 @@ export const getSessionContext = cache(
       : { data: null };
 
     // Índice de orgs accesibles, sin duplicar las que además son membresía
-    const byId = new Map<string, { row: OrgRow; role: OrgRole; viaAgency: boolean }>();
+    const byId = new Map<
+      string,
+      {
+        row: OrgRow;
+        role: OrgRole;
+        viaAgency: boolean;
+        permisos: ModuleKey[];
+        roleLabel: string | null;
+      }
+    >();
 
     for (const membership of memberships ?? []) {
       const row = firstRelation<OrgRow>(membership.organizations);
       if (!row) continue;
+      const perfil = firstRelation<{
+        label: string;
+        permissions: unknown;
+        base_role: OrgRole;
+      }>(membership.role_defs);
+      const role = (membership.role as OrgRole) ?? "operario";
+      // Los permisos propios del miembro ganan sobre los del perfil
+      const crudos = membership.permissions ?? perfil?.permissions ?? null;
       byId.set(row.id, {
         row,
-        role: (membership.role as OrgRole) ?? "operario",
+        role,
         viaAgency: false,
+        permisos: permisosEfectivos(role, crudos),
+        roleLabel: perfil?.label ?? null,
       });
     }
+    // El staff de la agencia entra a sus subcuentas con acceso completo
     for (const row of (subaccounts ?? []) as OrgRow[]) {
       if (byId.has(row.id)) continue;
-      byId.set(row.id, { row, role: "admin", viaAgency: true });
+      byId.set(row.id, {
+        row,
+        role: "admin",
+        viaAgency: true,
+        permisos: PERMISOS_ADMIN,
+        roleLabel: "Agencia",
+      });
     }
 
     const entries = [...byId.values()];
@@ -152,6 +189,8 @@ export const getSessionContext = cache(
           }
         : null,
       role: active?.role ?? null,
+      permisos: active?.permisos ?? [],
+      roleLabel: active?.roleLabel ?? null,
       agency,
       orgs,
     };
