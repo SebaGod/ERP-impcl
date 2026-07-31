@@ -1,6 +1,12 @@
 "use client";
 
-import { useActionState, useState, useTransition, type ReactNode } from "react";
+import {
+  useActionState,
+  useMemo,
+  useState,
+  useTransition,
+  type ReactNode,
+} from "react";
 import {
   AlarmClock,
   Bell,
@@ -10,17 +16,21 @@ import {
   ChevronDown,
   ChevronUp,
   Clock,
+  Copy,
+  Filter,
   MessageSquare,
   MessageSquarePlus,
   MoveRight,
   Pause,
   Play,
   Plus,
+  Search,
   Send,
   Tag,
   TagsIcon,
   Target,
   Trash2,
+  TriangleAlert,
   UserCheck,
   UserPlus,
   Users,
@@ -49,6 +59,13 @@ import {
   type OperatorKind,
   type TriggerKind,
 } from "@/lib/automation/catalog";
+import type { FieldDef } from "@/lib/crm/custom-fields";
+import {
+  envolver,
+  tagDeCampo,
+  tagsDesconocidas,
+  tagsDisponibles,
+} from "@/lib/crm/merge-tags";
 import {
   alternarAutomatizacion,
   eliminarAutomatizacion,
@@ -105,6 +122,34 @@ const lifecycles: { value: string; label: string }[] = [
   { value: "perdido", label: "Perdido" },
 ];
 
+/**
+ * El catálogo no trae familias, pero un selector plano de once acciones se
+ * lee peor que tres bloques cortos. Lo que no esté acá cae en "Otras".
+ */
+const GRUPOS_ACCION: { titulo: string; kinds: ActionKind[] }[] = [
+  {
+    titulo: "Embudo",
+    kinds: ["crear_oportunidad", "mover_etapa", "asignar_responsable"],
+  },
+  {
+    titulo: "Contacto",
+    kinds: ["agregar_etiqueta", "quitar_etiqueta", "cambiar_lifecycle"],
+  },
+  {
+    titulo: "Conversación",
+    kinds: [
+      "enviar_mensaje",
+      "activar_agente",
+      "pausar_agente",
+      "programar_seguimiento",
+    ],
+  },
+  { titulo: "Equipo", kinds: ["notificar_equipo"] },
+];
+
+/** Referencia estable: evita recalcular las claves de fusión en cada render. */
+const SIN_CAMPOS: FieldDef[] = [];
+
 export interface StageOption {
   id: string;
   name: string;
@@ -126,22 +171,32 @@ interface AutomationBuilderProps {
   stages: StageOption[];
   tags: TagOption[];
   usuarios: UserOption[];
+  /** Campos personalizados de la organización, para condiciones y variables */
+  campos?: FieldDef[];
   /** Automatización existente cuando se está editando */
   inicial?: AutomationRow | null;
-}
-
-function etiquetaCampo(campo: string): string {
-  return camposLabels[campo] ?? campo;
 }
 
 function plural(n: number, singular: string, plural: string): string {
   return `${n} ${n === 1 ? singular : plural}`;
 }
 
+function normalizar(texto: string): string {
+  return texto
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+function recortar(texto: string, largo = 48): string {
+  return texto.length > largo ? `${texto.slice(0, largo - 1)}…` : texto;
+}
+
 export function AutomationBuilder({
   stages,
   tags,
   usuarios,
+  campos = SIN_CAMPOS,
   inicial,
 }: AutomationBuilderProps) {
   const [state, formAction, pending] = useActionState(
@@ -157,25 +212,56 @@ export function AutomationBuilder({
   const [acciones, setAcciones] = useState<ConfiguredAction[]>(
     inicial?.actions ?? []
   );
-  const [selectorAbierto, setSelectorAbierto] = useState(false);
+  const [panelDisparador, setPanelDisparador] = useState(false);
+  const [filtroAbierto, setFiltroAbierto] = useState(false);
+  /** Posición del flujo donde está abierto el selector de acciones */
+  const [insertarEn, setInsertarEn] = useState<number | null>(null);
+  /** Índice de la acción expandida para editar */
+  const [expandida, setExpandida] = useState<number | null>(null);
 
   const trigger = getTrigger(triggerKind);
-  const campos = trigger?.camposDisponibles ?? [];
+  const camposEvento = trigger?.camposDisponibles ?? [];
+
+  const camposPersonalizados = useMemo(
+    () => campos.map((def) => ({ clave: tagDeCampo(def).key, label: def.label })),
+    [campos]
+  );
+  const etiquetasCustom = useMemo(() => {
+    const mapa = new Map<string, string>();
+    for (const campo of camposPersonalizados) mapa.set(campo.clave, campo.label);
+    return mapa;
+  }, [camposPersonalizados]);
+  const gruposTags = useMemo(() => tagsDisponibles(campos), [campos]);
+  const clavesDisponibles = useMemo(
+    () => gruposTags.flatMap((g) => g.tags.map((t) => t.key)),
+    [gruposTags]
+  );
+
+  function nombreDeCampo(clave: string): string {
+    return etiquetasCustom.get(clave) ?? camposLabels[clave] ?? clave;
+  }
 
   function elegirTrigger(kind: TriggerKind) {
     setTriggerKind(kind);
+    setPanelDisparador(false);
     // Los campos condicionables dependen del evento: las condiciones que ya
-    // no aplican se descartan en vez de quedar apuntando a la nada.
+    // no aplican se descartan. Las de campos personalizados siempre sirven.
     const disponibles = getTrigger(kind)?.camposDisponibles ?? [];
-    setConditions((prev) => prev.filter((c) => disponibles.includes(c.campo)));
+    setConditions((prev) =>
+      prev.filter(
+        (c) => disponibles.includes(c.campo) || etiquetasCustom.has(c.campo)
+      )
+    );
   }
 
   function agregarCondicion() {
-    if (campos.length === 0) return;
+    const primera = camposEvento[0] ?? camposPersonalizados[0]?.clave;
+    if (!primera) return;
     setConditions((prev) => [
       ...prev,
-      { campo: campos[0], operador: "es", valor: "" },
+      { campo: primera, operador: "es", valor: "" },
     ]);
+    setFiltroAbierto(true);
   }
 
   function actualizarCondicion(indice: number, cambio: Partial<Condition>) {
@@ -188,9 +274,14 @@ export function AutomationBuilder({
     setConditions((prev) => prev.filter((_, i) => i !== indice));
   }
 
-  function agregarAccion(tipo: ActionKind) {
-    setAcciones((prev) => [...prev, { tipo, config: {} }]);
-    setSelectorAbierto(false);
+  function insertarAccion(posicion: number, tipo: ActionKind) {
+    setAcciones((prev) => {
+      const copia = [...prev];
+      copia.splice(posicion, 0, { tipo, config: {} });
+      return copia;
+    });
+    setInsertarEn(null);
+    setExpandida(posicion);
   }
 
   function actualizarConfig(
@@ -212,29 +303,66 @@ export function AutomationBuilder({
   }
 
   function moverAccion(indice: number, delta: number) {
+    const destino = indice + delta;
+    if (destino < 0 || destino >= acciones.length) return;
     setAcciones((prev) => {
-      const destino = indice + delta;
-      if (destino < 0 || destino >= prev.length) return prev;
       const copia = [...prev];
       const [movida] = copia.splice(indice, 1);
       copia.splice(destino, 0, movida);
       return copia;
     });
+    // La tarjeta abierta sigue a su acción, no a su posición.
+    setExpandida((prev) => {
+      if (prev === null) return prev;
+      if (prev === indice) return destino;
+      if (prev === destino) return indice;
+      return prev;
+    });
+  }
+
+  function duplicarAccion(indice: number) {
+    setAcciones((prev) => {
+      const copia = [...prev];
+      const original = prev[indice];
+      copia.splice(indice + 1, 0, {
+        tipo: original.tipo,
+        config: { ...original.config },
+      });
+      return copia;
+    });
+    setExpandida(indice + 1);
   }
 
   function quitarAccion(indice: number) {
     setAcciones((prev) => prev.filter((_, i) => i !== indice));
+    setExpandida((prev) => {
+      if (prev === null) return prev;
+      if (prev === indice) return null;
+      return prev > indice ? prev - 1 : prev;
+    });
   }
+
+  const textoCondiciones = conditions
+    .map((c) => {
+      const operador = getOperator(c.operador);
+      const etiqueta = `${nombreDeCampo(c.campo)} ${operador?.label ?? c.operador}`;
+      if (operador?.sinValor) return etiqueta;
+      const valor = (c.valor ?? "").trim();
+      return valor ? `${etiqueta} ${valor}` : `${etiqueta} …`;
+    })
+    .join(" Y ");
+
+  const hayFiltro = conditions.length > 0 || filtroAbierto;
 
   const resumen = [
     `Cuando ${(trigger?.label ?? "ocurra el evento").toLowerCase()}`,
     conditions.length > 0
-      ? `si se cumplen ${plural(conditions.length, "condición", "condiciones")}`
+      ? plural(conditions.length, "condición", "condiciones")
       : "sin condiciones",
-    acciones.length > 0
-      ? `entonces ${plural(acciones.length, "acción", "acciones")}`
-      : "todavía sin acciones",
-  ].join(", ");
+    plural(acciones.length, "acción", "acciones"),
+  ].join(" · ");
+
+  const IconoTrigger = trigger ? ICONS[trigger.icon] ?? Zap : Zap;
 
   return (
     <form action={formAction} className="flex flex-col gap-5">
@@ -251,311 +379,321 @@ export function AutomationBuilder({
         value={JSON.stringify(acciones)}
       />
 
-      <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="automation-name">Nombre</Label>
-            <Input
-              id="automation-name"
-              name="name"
-              required
-              maxLength={80}
-              defaultValue={inicial?.name ?? ""}
-              placeholder="Ej: Lead nuevo de Instagram"
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="automation-description">
-              Descripción (opcional)
-            </Label>
-            <Input
-              id="automation-description"
-              name="description"
-              maxLength={160}
-              defaultValue={inicial?.description ?? ""}
-              placeholder="Para qué sirve, en una línea"
-            />
-          </div>
-        </div>
+      <section className="mx-auto w-full max-w-2xl rounded-xl border border-border bg-card p-3 shadow-sm">
+        <Label htmlFor="automation-name" className="sr-only">
+          Nombre de la automatización
+        </Label>
+        <Input
+          id="automation-name"
+          name="name"
+          required
+          maxLength={80}
+          defaultValue={inicial?.name ?? ""}
+          placeholder="Nombre de la automatización"
+          className="h-11 border-transparent bg-transparent px-2 text-lg font-semibold transition-colors hover:bg-muted/60 focus-visible:border-border focus-visible:bg-card"
+        />
+        <Label htmlFor="automation-description" className="sr-only">
+          Descripción
+        </Label>
+        <Input
+          id="automation-description"
+          name="description"
+          maxLength={160}
+          defaultValue={inicial?.description ?? ""}
+          placeholder="Para qué sirve, en una línea (opcional)"
+          className="h-9 border-transparent bg-transparent px-2 text-sm text-muted-foreground transition-colors hover:bg-muted/60 focus-visible:border-border focus-visible:bg-card"
+        />
       </section>
 
-      <Paso
-        numero={1}
-        titulo="Cuando pase esto"
-        descripcion="El evento que enciende la regla. Solo uno por automatización."
-      >
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {triggers.map((t) => {
-            const Icono = ICONS[t.icon] ?? Zap;
-            const activo = t.kind === triggerKind;
-            return (
-              <button
-                key={t.kind}
-                type="button"
-                onClick={() => elegirTrigger(t.kind)}
-                className={cn(
-                  "flex flex-col gap-1.5 rounded-lg border border-border p-3 text-left transition-colors",
-                  activo
-                    ? "bg-primary/5 ring-2 ring-primary"
-                    : "hover:bg-muted"
-                )}
-              >
-                <span className="flex items-center gap-2 text-sm font-medium">
-                  <Icono className="size-4 shrink-0 text-primary" />
-                  {t.label}
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  {t.description}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </Paso>
-
-      <Paso
-        numero={2}
-        titulo="Si se cumple"
-        descripcion="Opcional. Todas las condiciones deben cumplirse."
-      >
-        <div className="flex flex-col gap-3">
-          {conditions.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Sin condiciones la automatización corre cada vez que ocurre el
-              evento.
-            </p>
-          ) : (
-            <div className="flex flex-col gap-2">
-              {conditions.map((condicion, indice) => {
-                const operador = getOperator(condicion.operador);
-                return (
-                  <div
-                    key={indice}
-                    className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"
-                  >
-                    <Select
-                      aria-label="Campo"
-                      value={condicion.campo}
-                      onChange={(e) =>
-                        actualizarCondicion(indice, { campo: e.target.value })
-                      }
-                    >
-                      {campos.map((campo) => (
-                        <option key={campo} value={campo}>
-                          {etiquetaCampo(campo)}
-                        </option>
-                      ))}
-                    </Select>
-                    <Select
-                      aria-label="Operador"
-                      value={condicion.operador}
-                      onChange={(e) =>
-                        actualizarCondicion(indice, {
-                          operador: e.target.value as OperatorKind,
-                        })
-                      }
-                    >
-                      {operators.map((o) => (
-                        <option key={o.kind} value={o.kind}>
-                          {o.label}
-                        </option>
-                      ))}
-                    </Select>
-                    {operador?.sinValor ? (
-                      <span className="hidden items-center text-xs text-muted-foreground sm:flex">
-                        Sin valor
-                      </span>
-                    ) : (
-                      <Input
-                        aria-label="Valor"
-                        placeholder="Valor"
-                        value={condicion.valor ?? ""}
-                        onChange={(e) =>
-                          actualizarCondicion(indice, { valor: e.target.value })
-                        }
-                      />
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => quitarCondicion(indice)}
-                      title="Eliminar condición"
-                      className="justify-self-start rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-destructive"
-                    >
-                      <Trash2 className="size-4" />
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
+      {/* Lienzo del flujo */}
+      <div className="mx-auto w-full max-w-2xl">
+        {/* Disparador */}
+        <div
+          className={cn(
+            "rounded-xl border border-primary/40 bg-primary/5 shadow-sm transition-colors",
+            panelDisparador && "ring-2 ring-primary/30"
           )}
+        >
+          <button
+            type="button"
+            onClick={() => setPanelDisparador((v) => !v)}
+            aria-expanded={panelDisparador}
+            className="flex w-full items-center gap-3 rounded-xl p-3 text-left transition-colors hover:bg-primary/10"
+          >
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+              <IconoTrigger className="size-4" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-xs uppercase tracking-wide text-muted-foreground">
+                Cuando pase esto
+              </span>
+              <span className="block truncate text-sm font-medium">
+                {trigger?.label ?? "Elige un disparador"}
+              </span>
+              <span className="block truncate text-xs text-muted-foreground">
+                {trigger?.description ?? "Sin evento configurado"}
+              </span>
+            </span>
+            <ChevronDown
+              className={cn(
+                "size-4 shrink-0 text-muted-foreground transition-transform duration-150",
+                panelDisparador && "rotate-180"
+              )}
+            />
+          </button>
 
-          <div>
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={agregarCondicion}
-              disabled={campos.length === 0}
-            >
-              <Plus className="size-4" /> Agregar condición
-            </Button>
-          </div>
-        </div>
-      </Paso>
-
-      <Paso
-        numero={3}
-        titulo="Haz esto"
-        descripcion="Las acciones corren en orden, una tras otra."
-      >
-        <div className="flex flex-col gap-3">
-          {acciones.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Todavía no hay acciones. Una automatización sin acciones no hace
-              nada.
-            </p>
-          ) : (
-            <ol className="flex flex-col gap-3">
-              {acciones.map((accion, indice) => {
-                const def = getAction(accion.tipo);
-                if (!def) return null;
-                const Icono = ICONS[def.icon] ?? Zap;
-                return (
-                  <li
-                    key={indice}
-                    className="rounded-lg border border-border bg-background p-3"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-start gap-2.5">
-                        <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold">
-                          {indice + 1}
-                        </span>
-                        <div>
-                          <p className="flex items-center gap-2 text-sm font-medium">
-                            <Icono className="size-4 text-primary" />
-                            {def.label}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            {def.description}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => moverAccion(indice, -1)}
-                          disabled={indice === 0}
-                          title="Subir"
-                          className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-30"
-                        >
-                          <ChevronUp className="size-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => moverAccion(indice, 1)}
-                          disabled={indice === acciones.length - 1}
-                          title="Bajar"
-                          className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-30"
-                        >
-                          <ChevronDown className="size-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => quitarAccion(indice)}
-                          title="Eliminar acción"
-                          className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-destructive"
-                        >
-                          <Trash2 className="size-4" />
-                        </button>
-                      </div>
-                    </div>
-
-                    {def.config.length > 0 && (
-                      <div className="mt-3 grid gap-3 pl-8 sm:grid-cols-2">
-                        {def.config.map((campo) => {
-                          const bruto = accion.config[campo.key];
-                          return (
-                            <CampoDeConfig
-                              key={campo.key}
-                              id={`accion-${indice}-${campo.key}`}
-                              campo={campo}
-                              valor={bruto === undefined ? "" : String(bruto)}
-                              stages={stages}
-                              tags={tags}
-                              usuarios={usuarios}
-                              onChange={(valor) =>
-                                actualizarConfig(
-                                  indice,
-                                  campo.key,
-                                  valor,
-                                  campo.type === "numero" ||
-                                    campo.type === "horas"
-                                )
-                              }
-                            />
-                          );
-                        })}
-                      </div>
-                    )}
-                  </li>
-                );
-              })}
-            </ol>
-          )}
-
-          {selectorAbierto ? (
-            <div className="flex flex-col gap-3 rounded-lg border border-border bg-muted/40 p-3">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-medium">Elige una acción</p>
-                <button
-                  type="button"
-                  onClick={() => setSelectorAbierto(false)}
-                  title="Cerrar"
-                  className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-                >
-                  <X className="size-4" />
-                </button>
-              </div>
+          {panelDisparador && (
+            <div className="border-t border-primary/30 p-3">
+              <p className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">
+                Elige el disparador
+              </p>
               <div className="grid gap-2 sm:grid-cols-2">
-                {catalogoAcciones.map((a) => {
-                  const Icono = ICONS[a.icon] ?? Zap;
+                {triggers.map((t) => {
+                  const Icono = ICONS[t.icon] ?? Zap;
+                  const activo = t.kind === triggerKind;
                   return (
                     <button
-                      key={a.kind}
+                      key={t.kind}
                       type="button"
-                      onClick={() => agregarAccion(a.kind)}
-                      className="flex flex-col gap-1 rounded-lg border border-border bg-card p-3 text-left transition-colors hover:bg-muted"
+                      onClick={() => elegirTrigger(t.kind)}
+                      className={cn(
+                        "flex flex-col gap-1 rounded-lg border border-border bg-card p-2.5 text-left transition-colors duration-150",
+                        activo ? "ring-2 ring-primary" : "hover:bg-muted"
+                      )}
                     >
                       <span className="flex items-center gap-2 text-sm font-medium">
                         <Icono className="size-4 shrink-0 text-primary" />
-                        {a.label}
+                        {t.label}
                       </span>
                       <span className="text-xs text-muted-foreground">
-                        {a.description}
+                        {t.description}
                       </span>
                     </button>
                   );
                 })}
               </div>
             </div>
-          ) : (
-            <div>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={() => setSelectorAbierto(true)}
-              >
-                <Plus className="size-4" /> Agregar acción
-              </Button>
-            </div>
           )}
         </div>
-      </Paso>
 
-      <div className="sticky bottom-4 flex flex-col gap-3 rounded-xl border border-border bg-card/95 p-4 shadow-lg backdrop-blur sm:flex-row sm:items-center sm:justify-between">
+        <Conector />
+
+        {/* Filtro */}
+        {hayFiltro ? (
+          <div className="rounded-xl border border-border bg-card shadow-sm">
+            <button
+              type="button"
+              onClick={() => setFiltroAbierto((v) => !v)}
+              aria-expanded={filtroAbierto}
+              className="flex w-full items-center gap-3 rounded-xl p-3 text-left transition-colors duration-150 hover:bg-muted/60"
+            >
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                <Filter className="size-4" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-xs uppercase tracking-wide text-muted-foreground">
+                  Si se cumple
+                </span>
+                <span className="block truncate text-sm font-medium">
+                  {textoCondiciones || "Sin condiciones todavía"}
+                </span>
+                <span className="block text-xs text-muted-foreground">
+                  {conditions.length > 0
+                    ? "Todas las condiciones deben cumplirse"
+                    : "Sin condiciones corre cada vez que ocurre el evento"}
+                </span>
+              </span>
+              <ChevronDown
+                className={cn(
+                  "size-4 shrink-0 text-muted-foreground transition-transform duration-150",
+                  filtroAbierto && "rotate-180"
+                )}
+              />
+            </button>
+
+            {filtroAbierto && (
+              <div className="flex flex-col gap-2 border-t border-border p-3">
+                {conditions.map((condicion, indice) => {
+                  const operador = getOperator(condicion.operador);
+                  return (
+                    <div
+                      key={indice}
+                      className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"
+                    >
+                      <Select
+                        aria-label="Campo"
+                        value={condicion.campo}
+                        onChange={(e) =>
+                          actualizarCondicion(indice, { campo: e.target.value })
+                        }
+                      >
+                        {camposEvento.length > 0 && (
+                          <optgroup label="Campos del evento">
+                            {camposEvento.map((campo) => (
+                              <option key={campo} value={campo}>
+                                {nombreDeCampo(campo)}
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
+                        {camposPersonalizados.length > 0 && (
+                          <optgroup label="Campos personalizados">
+                            {camposPersonalizados.map((campo) => (
+                              <option key={campo.clave} value={campo.clave}>
+                                {campo.label}
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
+                      </Select>
+                      <Select
+                        aria-label="Operador"
+                        value={condicion.operador}
+                        onChange={(e) =>
+                          actualizarCondicion(indice, {
+                            operador: e.target.value as OperatorKind,
+                          })
+                        }
+                      >
+                        {operators.map((o) => (
+                          <option key={o.kind} value={o.kind}>
+                            {o.label}
+                          </option>
+                        ))}
+                      </Select>
+                      {operador?.sinValor ? (
+                        <span className="hidden items-center text-xs text-muted-foreground sm:flex">
+                          Sin valor
+                        </span>
+                      ) : (
+                        <Input
+                          aria-label="Valor"
+                          placeholder="Valor"
+                          value={condicion.valor ?? ""}
+                          onChange={(e) =>
+                            actualizarCondicion(indice, {
+                              valor: e.target.value,
+                            })
+                          }
+                        />
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => quitarCondicion(indice)}
+                        title="Eliminar condición"
+                        className="justify-self-start rounded-lg p-2 text-muted-foreground transition-colors duration-150 hover:bg-muted hover:text-destructive"
+                      >
+                        <Trash2 className="size-4" />
+                      </button>
+                    </div>
+                  );
+                })}
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={agregarCondicion}
+                    disabled={
+                      camposEvento.length === 0 &&
+                      camposPersonalizados.length === 0
+                    }
+                  >
+                    <Plus className="size-4" /> Agregar condición
+                  </Button>
+                  {conditions.length === 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setFiltroAbierto(false)}
+                      className="text-xs text-muted-foreground transition-colors duration-150 hover:text-foreground"
+                    >
+                      Quitar el filtro
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={agregarCondicion}
+            className="mx-auto flex items-center gap-1.5 rounded-full border border-dashed border-border bg-card px-3 py-1.5 text-xs text-muted-foreground transition-colors duration-150 hover:border-primary hover:text-primary"
+          >
+            <Filter className="size-3.5" /> Agregar filtro
+          </button>
+        )}
+
+        {/* Acciones */}
+        {acciones.map((accion, indice) => {
+          const def = getAction(accion.tipo);
+          return (
+            <div key={indice}>
+              <Conector onInsertar={() => setInsertarEn(indice)} />
+              {insertarEn === indice && (
+                <SelectorAcciones
+                  key={`selector-${indice}`}
+                  onElegir={(kind) => insertarAccion(indice, kind)}
+                  onCerrar={() => setInsertarEn(null)}
+                />
+              )}
+              {def && (
+                <NodoAccion
+                  numero={indice + 1}
+                  def={def}
+                  accion={accion}
+                  abierta={expandida === indice}
+                  primera={indice === 0}
+                  ultima={indice === acciones.length - 1}
+                  stages={stages}
+                  tags={tags}
+                  usuarios={usuarios}
+                  gruposTags={gruposTags}
+                  clavesDisponibles={clavesDisponibles}
+                  onAlternar={() =>
+                    setExpandida((prev) => (prev === indice ? null : indice))
+                  }
+                  onCambiar={(clave, valor, numerico) =>
+                    actualizarConfig(indice, clave, valor, numerico)
+                  }
+                  onSubir={() => moverAccion(indice, -1)}
+                  onBajar={() => moverAccion(indice, 1)}
+                  onDuplicar={() => duplicarAccion(indice)}
+                  onEliminar={() => quitarAccion(indice)}
+                />
+              )}
+            </div>
+          );
+        })}
+
+        <Conector onInsertar={() => setInsertarEn(acciones.length)} />
+        {insertarEn === acciones.length && (
+          <SelectorAcciones
+            key={`selector-${acciones.length}`}
+            onElegir={(kind) => insertarAccion(acciones.length, kind)}
+            onCerrar={() => setInsertarEn(null)}
+          />
+        )}
+
+        {acciones.length === 0 && insertarEn === null && (
+          <>
+            <p className="text-center text-xs text-muted-foreground">
+              Todavía no hay acciones. Usa el + para agregar la primera.
+            </p>
+            <Conector />
+          </>
+        )}
+
+        <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
+          <span className="size-2 rounded-full bg-border" />
+          Fin del flujo
+        </div>
+      </div>
+
+      <div className="sticky bottom-4 mx-auto flex w-full max-w-2xl flex-col gap-3 rounded-xl border border-border bg-card/95 p-4 shadow-lg backdrop-blur sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 flex-col gap-0.5">
-          <p className="text-sm font-medium">{resumen}.</p>
+          <p className="truncate text-sm font-medium">{resumen}</p>
           <p className="text-xs text-muted-foreground">
             {inicial
               ? "Los cambios se aplican a la próxima ejecución."
@@ -568,7 +706,7 @@ export function AutomationBuilder({
         <div className="flex shrink-0 items-center gap-2">
           {inicial && <BotonEliminar id={inicial.id} />}
           <Button type="submit" disabled={pending}>
-            {pending ? "Guardando…" : "Guardar automatización"}
+            {pending ? "Guardando…" : "Guardar"}
           </Button>
         </div>
       </div>
@@ -576,31 +714,328 @@ export function AutomationBuilder({
   );
 }
 
-function Paso({
+/**
+ * La línea que une dos nodos. Con `onInsertar` lleva encima el botón redondo
+ * que agrega una acción justo en esa posición del flujo.
+ */
+function Conector({ onInsertar }: { onInsertar?: () => void }) {
+  return (
+    <div
+      className={cn(
+        "relative mx-auto w-px bg-border",
+        onInsertar ? "h-10" : "h-8"
+      )}
+    >
+      {onInsertar && (
+        <button
+          type="button"
+          onClick={onInsertar}
+          title="Insertar acción aquí"
+          aria-label="Insertar acción aquí"
+          className="absolute left-1/2 top-1/2 flex size-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-card text-muted-foreground shadow-sm transition-colors duration-150 hover:border-primary hover:text-primary"
+        >
+          <Plus className="size-3.5" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** Panel desplegable con el catálogo de acciones, buscable y agrupado. */
+function SelectorAcciones({
+  onElegir,
+  onCerrar,
+}: {
+  onElegir: (kind: ActionKind) => void;
+  onCerrar: () => void;
+}) {
+  const [busqueda, setBusqueda] = useState("");
+
+  const consulta = normalizar(busqueda.trim());
+  const filtradas =
+    consulta === ""
+      ? catalogoAcciones
+      : catalogoAcciones.filter((a) =>
+          normalizar(`${a.label} ${a.description}`).includes(consulta)
+        );
+
+  const asignadas = new Set<string>(GRUPOS_ACCION.flatMap((g) => g.kinds));
+  const grupos = [
+    ...GRUPOS_ACCION.map((g) => ({
+      titulo: g.titulo,
+      items: filtradas.filter((a) => g.kinds.includes(a.kind)),
+    })),
+    {
+      titulo: "Otras",
+      items: filtradas.filter((a) => !asignadas.has(a.kind)),
+    },
+  ].filter((g) => g.items.length > 0);
+
+  return (
+    <div className="rounded-xl border border-border bg-card shadow-sm">
+      <div className="flex items-center gap-2 border-b border-border p-3">
+        <div className="relative flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            autoFocus
+            value={busqueda}
+            onChange={(e) => setBusqueda(e.target.value)}
+            placeholder="Buscar acción"
+            aria-label="Buscar acción"
+            className="pl-9"
+          />
+        </div>
+        <button
+          type="button"
+          onClick={onCerrar}
+          title="Cerrar"
+          aria-label="Cerrar selector"
+          className="rounded-lg p-2 text-muted-foreground transition-colors duration-150 hover:bg-muted hover:text-foreground"
+        >
+          <X className="size-4" />
+        </button>
+      </div>
+
+      <div className="max-h-80 overflow-y-auto p-3">
+        {grupos.length === 0 ? (
+          <p className="py-4 text-center text-sm text-muted-foreground">
+            Ninguna acción coincide con “{busqueda}”.
+          </p>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {grupos.map((grupo) => (
+              <div key={grupo.titulo} className="flex flex-col gap-1.5">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                  {grupo.titulo}
+                </p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {grupo.items.map((a) => {
+                    const Icono = ICONS[a.icon] ?? Zap;
+                    return (
+                      <button
+                        key={a.kind}
+                        type="button"
+                        onClick={() => onElegir(a.kind)}
+                        className="flex flex-col gap-1 rounded-lg border border-border p-2.5 text-left transition-colors duration-150 hover:bg-muted"
+                      >
+                        <span className="flex items-center gap-2 text-sm font-medium">
+                          <Icono className="size-4 shrink-0 text-primary" />
+                          {a.label}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {a.description}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+interface NodoAccionProps {
+  numero: number;
+  def: ActionDef;
+  accion: ConfiguredAction;
+  abierta: boolean;
+  primera: boolean;
+  ultima: boolean;
+  stages: StageOption[];
+  tags: TagOption[];
+  usuarios: UserOption[];
+  gruposTags: { group: string; tags: { key: string; label: string }[] }[];
+  clavesDisponibles: string[];
+  onAlternar: () => void;
+  onCambiar: (clave: string, valor: string, numerico: boolean) => void;
+  onSubir: () => void;
+  onBajar: () => void;
+  onDuplicar: () => void;
+  onEliminar: () => void;
+}
+
+function NodoAccion({
   numero,
+  def,
+  accion,
+  abierta,
+  primera,
+  ultima,
+  stages,
+  tags,
+  usuarios,
+  gruposTags,
+  clavesDisponibles,
+  onAlternar,
+  onCambiar,
+  onSubir,
+  onBajar,
+  onDuplicar,
+  onEliminar,
+}: NodoAccionProps) {
+  const Icono = ICONS[def.icon] ?? Zap;
+
+  const partes: string[] = [];
+  const faltantes: string[] = [];
+  for (const campo of def.config) {
+    const bruto = accion.config[campo.key];
+    const texto = bruto === undefined || bruto === null ? "" : String(bruto);
+    if (texto.trim() === "") {
+      if (campo.required) faltantes.push(campo.label);
+      continue;
+    }
+    partes.push(`${campo.label}: ${valorLegible(campo, texto, stages, tags, usuarios)}`);
+  }
+
+  const resumen = partes.join(" · ");
+
+  return (
+    <div
+      className={cn(
+        "group relative rounded-xl border bg-card shadow-sm transition-colors duration-150",
+        abierta ? "border-primary/50" : "border-border"
+      )}
+    >
+      <button
+        type="button"
+        onClick={onAlternar}
+        aria-expanded={abierta}
+        className="flex w-full items-center gap-3 rounded-xl p-3 pr-28 text-left transition-colors duration-150 hover:bg-muted/60"
+      >
+        <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold tabular-nums">
+          {numero}
+        </span>
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+          <Icono className="size-4" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-medium">{def.label}</span>
+          <span className="block truncate text-xs text-muted-foreground">
+            {resumen || def.description}
+          </span>
+          {faltantes.length > 0 && (
+            <span className="mt-0.5 flex items-center gap-1 text-xs text-warning">
+              <TriangleAlert className="size-3 shrink-0" />
+              Falta configurar: {faltantes.join(", ")}
+            </span>
+          )}
+        </span>
+      </button>
+
+      <div className="absolute right-2 top-3 flex items-center gap-0.5 opacity-0 transition-opacity duration-150 focus-within:opacity-100 group-hover:opacity-100">
+        <BotonNodo titulo="Subir" onClick={onSubir} disabled={primera}>
+          <ChevronUp className="size-4" />
+        </BotonNodo>
+        <BotonNodo titulo="Bajar" onClick={onBajar} disabled={ultima}>
+          <ChevronDown className="size-4" />
+        </BotonNodo>
+        <BotonNodo titulo="Duplicar" onClick={onDuplicar}>
+          <Copy className="size-4" />
+        </BotonNodo>
+        <BotonNodo titulo="Eliminar" onClick={onEliminar} destructivo>
+          <Trash2 className="size-4" />
+        </BotonNodo>
+      </div>
+
+      {abierta && (
+        <div className="border-t border-border p-3">
+          {def.config.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Esta acción no necesita configuración.
+            </p>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {def.config.map((campo) => {
+                const bruto = accion.config[campo.key];
+                return (
+                  <CampoDeConfig
+                    key={campo.key}
+                    id={`accion-${numero}-${campo.key}`}
+                    campo={campo}
+                    valor={bruto === undefined ? "" : String(bruto)}
+                    stages={stages}
+                    tags={tags}
+                    usuarios={usuarios}
+                    gruposTags={gruposTags}
+                    clavesDisponibles={clavesDisponibles}
+                    onChange={(valor) =>
+                      onCambiar(
+                        campo.key,
+                        valor,
+                        campo.type === "numero" || campo.type === "horas"
+                      )
+                    }
+                  />
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BotonNodo({
   titulo,
-  descripcion,
+  onClick,
+  disabled,
+  destructivo,
   children,
 }: {
-  numero: number;
   titulo: string;
-  descripcion: string;
+  onClick: () => void;
+  disabled?: boolean;
+  destructivo?: boolean;
   children: ReactNode;
 }) {
   return (
-    <section className="rounded-xl border border-border bg-card shadow-sm">
-      <header className="flex items-start gap-3 border-b border-border p-4">
-        <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
-          {numero}
-        </span>
-        <div>
-          <h2 className="text-base font-semibold">{titulo}</h2>
-          <p className="text-sm text-muted-foreground">{descripcion}</p>
-        </div>
-      </header>
-      <div className="p-4">{children}</div>
-    </section>
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={titulo}
+      aria-label={titulo}
+      className={cn(
+        "rounded-lg p-1.5 text-muted-foreground transition-colors duration-150 disabled:opacity-30",
+        destructivo
+          ? "hover:bg-muted hover:text-destructive"
+          : "hover:bg-muted hover:text-foreground"
+      )}
+    >
+      {children}
+    </button>
   );
+}
+
+/** Traduce el valor guardado a algo legible para el resumen del nodo. */
+function valorLegible(
+  campo: ActionDef["config"][number],
+  valor: string,
+  stages: StageOption[],
+  tags: TagOption[],
+  usuarios: UserOption[]
+): string {
+  switch (campo.type) {
+    case "etapa":
+      return stages.find((e) => e.id === valor)?.name ?? "etapa eliminada";
+    case "etiqueta":
+      return tags.find((t) => t.key === valor)?.label ?? valor;
+    case "usuario":
+      return usuarios.find((u) => u.id === valor)?.name ?? "sin asignar";
+    case "lifecycle":
+      return lifecycles.find((l) => l.value === valor)?.label ?? valor;
+    case "horas":
+      return `${valor} h`;
+    case "texto_largo":
+      return `“${recortar(valor)}”`;
+    default:
+      return recortar(valor);
+  }
 }
 
 interface CampoDeConfigProps {
@@ -610,6 +1045,8 @@ interface CampoDeConfigProps {
   stages: StageOption[];
   tags: TagOption[];
   usuarios: UserOption[];
+  gruposTags: { group: string; tags: { key: string; label: string }[] }[];
+  clavesDisponibles: string[];
   onChange: (valor: string) => void;
 }
 
@@ -621,6 +1058,8 @@ function CampoDeConfig({
   stages,
   tags,
   usuarios,
+  gruposTags,
+  clavesDisponibles,
   onChange,
 }: CampoDeConfigProps) {
   let control: ReactNode;
@@ -731,12 +1170,20 @@ function CampoDeConfig({
       break;
     case "texto_largo":
       control = (
-        <Textarea
-          id={id}
-          rows={3}
-          value={valor}
-          onChange={(e) => onChange(e.target.value)}
-        />
+        <>
+          <Textarea
+            id={id}
+            rows={3}
+            value={valor}
+            onChange={(e) => onChange(e.target.value)}
+          />
+          <InsertadorDeVariables
+            texto={valor}
+            grupos={gruposTags}
+            clavesDisponibles={clavesDisponibles}
+            onInsertar={(clave) => onChange(`${valor}${envolver(clave)}`)}
+          />
+        </>
       );
       break;
     default:
@@ -759,6 +1206,60 @@ function CampoDeConfig({
       {control}
       {campo.help && (
         <p className="text-xs text-muted-foreground">{campo.help}</p>
+      )}
+    </div>
+  );
+}
+
+/** Chips de claves de fusión y aviso de variables inventadas. */
+function InsertadorDeVariables({
+  texto,
+  grupos,
+  clavesDisponibles,
+  onInsertar,
+}: {
+  texto: string;
+  grupos: { group: string; tags: { key: string; label: string }[] }[];
+  clavesDisponibles: string[];
+  onInsertar: (clave: string) => void;
+}) {
+  const desconocidas = tagsDesconocidas(texto, clavesDisponibles);
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="max-h-36 overflow-y-auto rounded-lg border border-border bg-muted/40 p-2">
+        <div className="flex flex-col gap-2">
+          {grupos.map((grupo) => (
+            <div key={grupo.group} className="flex flex-col gap-1">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                {grupo.group}
+              </p>
+              <div className="flex flex-wrap gap-1">
+                {grupo.tags.map((tag) => (
+                  <button
+                    key={tag.key}
+                    type="button"
+                    onClick={() => onInsertar(tag.key)}
+                    title={`Insertar ${envolver(tag.key)}`}
+                    className="rounded-full border border-border bg-card px-2 py-0.5 text-xs text-muted-foreground transition-colors duration-150 hover:border-primary hover:text-primary"
+                  >
+                    {tag.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {desconocidas.length > 0 && (
+        <p className="flex items-start gap-1.5 rounded-lg border border-warning/30 bg-warning/10 px-2 py-1.5 text-xs text-warning">
+          <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
+          <span>
+            Variables que no existen: {desconocidas.join(", ")}. Se reemplazan
+            por texto vacío al enviar.
+          </span>
+        </p>
       )}
     </div>
   );

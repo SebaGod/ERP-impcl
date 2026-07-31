@@ -4,6 +4,7 @@ import { ArrowLeft } from "lucide-react";
 import { requireAdminContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import type { AutomationRow } from "@/lib/automation/catalog";
+import type { FieldDef } from "@/lib/crm/custom-fields";
 import {
   AutomationBuilder,
   type StageOption,
@@ -29,33 +30,42 @@ export default async function NuevaAutomatizacionPage({
   const session = await requireAdminContext();
   const supabase = await createClient();
 
-  const [stagesRes, tagsRes, membersRes, automationRes] = await Promise.all([
-    supabase
-      .from("pipeline_stages")
-      .select("id, name, pipeline_id, kind")
-      .eq("org_id", session.org.id)
-      .order("position"),
-    supabase
-      .from("tag_defs")
-      .select("key, label")
-      .eq("org_id", session.org.id)
-      .order("label"),
-    supabase
-      .from("organization_members")
-      .select("user_id, profiles (full_name)")
-      .eq("org_id", session.org.id),
-    id
-      ? supabase
-          .from("automations")
-          .select(CAMPOS_AUTOMATIZACION)
-          .eq("id", id)
-          .eq("org_id", session.org.id)
-          .maybeSingle()
-      : Promise.resolve({ data: null }),
-  ]);
+  const [stagesRes, tagsRes, membersRes, camposRes, automationRes] =
+    await Promise.all([
+      supabase
+        .from("pipeline_stages")
+        .select("id, name, pipeline_id, kind")
+        .eq("org_id", session.org.id)
+        .order("position"),
+      supabase
+        .from("tag_defs")
+        .select("key, label")
+        .eq("org_id", session.org.id)
+        .order("label"),
+      supabase
+        .from("organization_members")
+        .select("user_id, profiles (full_name)")
+        .eq("org_id", session.org.id),
+      supabase
+        .from("custom_field_defs")
+        .select(
+          "id, entity, key, label, field_type, options, help, required, position"
+        )
+        .eq("org_id", session.org.id)
+        .order("position"),
+      id
+        ? supabase
+            .from("automations")
+            .select(CAMPOS_AUTOMATIZACION)
+            .eq("id", id)
+            .eq("org_id", session.org.id)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
+    ]);
 
   const stages = (stagesRes.data ?? []) as StageOption[];
   const tags = (tagsRes.data ?? []) as TagOption[];
+  const campos = (camposRes.data ?? []) as FieldDef[];
   const inicial = (automationRes.data ?? null) as AutomationRow | null;
 
   // supabase-js sin tipos generados infiere la relación como arreglo.
@@ -93,6 +103,7 @@ export default async function NuevaAutomatizacionPage({
         stages={stages}
         tags={tags}
         usuarios={usuarios}
+        campos={campos}
         inicial={inicial}
       />
     </div>

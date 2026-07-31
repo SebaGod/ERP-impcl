@@ -116,6 +116,73 @@ export async function crearCampo(
 }
 
 /**
+ * Renombra y reconfigura un campo existente.
+ *
+ * A propósito NO toca `key` ni `entity`: los valores viven en el jsonb bajo esa
+ * clave, así que cambiarla dejaría los datos ya guardados fuera de la ficha.
+ * Renombrar la etiqueta es solo cosmético.
+ */
+export async function actualizarCampo(
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const session = await requireAdminContext();
+
+  const id = String(formData.get("id") ?? "");
+  const label = String(formData.get("label") ?? "").trim();
+  const help = String(formData.get("help") ?? "").trim();
+  const required = formData.get("required") === "on";
+  const folder = leerCarpeta(formData.get("folder"));
+
+  if (id === "") {
+    return { error: "Campo no encontrado" };
+  }
+  if (label.length < 2) {
+    return { error: "La etiqueta debe tener al menos 2 caracteres" };
+  }
+
+  const supabase = await createClient();
+
+  const { data: campo } = await supabase
+    .from("custom_field_defs")
+    .select("id, field_type")
+    .eq("id", id)
+    .eq("org_id", session.org.id)
+    .maybeSingle();
+
+  if (!campo) {
+    return { error: "Campo no encontrado" };
+  }
+
+  const esSeleccion = (campo as { field_type: string }).field_type === "seleccion";
+  const options = esSeleccion
+    ? leerOpciones(String(formData.get("options") ?? ""))
+    : [];
+  if (esSeleccion && options.length < 2) {
+    return { error: "Escribe al menos 2 opciones, una por línea" };
+  }
+
+  const { error } = await supabase
+    .from("custom_field_defs")
+    .update({
+      label,
+      help: help || null,
+      required,
+      folder,
+      ...(esSeleccion ? { options } : {}),
+    })
+    .eq("id", id)
+    .eq("org_id", session.org.id);
+
+  if (error) {
+    return { error: "No pudimos guardar los cambios. Intenta de nuevo." };
+  }
+
+  revalidatePath("/configuracion/campos");
+  return { error: null };
+}
+
+/**
  * Borra la definición del campo.
  *
  * Los valores ya guardados en contacts.custom_fields / opportunities.custom_fields
