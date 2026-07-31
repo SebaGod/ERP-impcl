@@ -40,6 +40,12 @@ function leerOpciones(bruto: string): string[] {
   return opciones;
 }
 
+/** La carpeta es una etiqueta libre: vacía se guarda como null. */
+function leerCarpeta(bruto: FormDataEntryValue | null): string | null {
+  const carpeta = String(bruto ?? "").trim().slice(0, 60);
+  return carpeta === "" ? null : carpeta;
+}
+
 export async function crearCampo(
   _prev: ActionState,
   formData: FormData
@@ -51,6 +57,7 @@ export async function crearCampo(
   const fieldType = String(formData.get("field_type") ?? "texto");
   const help = String(formData.get("help") ?? "").trim();
   const required = formData.get("required") === "on";
+  const folder = leerCarpeta(formData.get("folder"));
 
   if (!esEntidad(entity)) {
     return { error: "Ficha no válida" };
@@ -93,6 +100,7 @@ export async function crearCampo(
     options,
     help: help || null,
     required,
+    folder,
     position: count ?? 0,
   });
 
