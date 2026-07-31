@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireOrgContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { dispatchEvent } from "@/lib/automation/engine";
 
 export interface ActionState {
   error: string | null;
@@ -45,9 +46,17 @@ export async function createContact(
       notes: f.notes || null,
       owner_id: session.userId,
     })
-    .select("id")
+    .select("*")
     .single();
   if (error || !data) return { error: "No pudimos guardar el contacto." };
+
+  await dispatchEvent(supabase, {
+    orgId: session.org.id,
+    kind: "contacto_creado",
+    entidades: { contactId: data.id },
+    contacto: data,
+    negocio: { nombre: session.org.name },
+  });
 
   revalidatePath("/contactos");
   redirect(`/contactos/${data.id}`);

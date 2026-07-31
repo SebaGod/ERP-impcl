@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireOrgContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { dispatchEvent } from "@/lib/automation/engine";
 
 export interface ActionState {
   error: string | null;
@@ -31,7 +32,84 @@ export async function createConversation(
     .single();
   if (error || !data) return { error: "No pudimos crear la conversación." };
 
+  const { data: contacto } = await supabase
+    .from("contacts")
+    .select("*")
+    .eq("id", contactId)
+    .maybeSingle();
+
+  await dispatchEvent(supabase, {
+    orgId: session.org.id,
+    kind: "conversacion_creada",
+    entidades: { conversationId: data.id, contactId },
+    contacto,
+    canal: channel,
+    negocio: { nombre: session.org.name },
+  });
+
   redirect(`/conversaciones/${data.id}`);
+}
+
+/**
+ * Registra un mensaje del contacto y despacha el evento.
+ *
+ * Vive aquí y no en el webhook porque también se usa desde el inbox cuando el
+ * equipo transcribe algo que llegó por otra vía. Cuando la integración de Meta
+ * esté conectada, el webhook llamará a esta misma función.
+ */
+export async function recordInboundMessage(params: {
+  orgId: string;
+  orgName: string;
+  conversationId: string;
+  contactId: string;
+  body: string;
+  channel: string;
+  externalId?: string | null;
+}): Promise<void> {
+  const supabase = await createClient();
+
+  await supabase.from("messages").insert({
+    org_id: params.orgId,
+    conversation_id: params.conversationId,
+    direction: "entrante",
+    sender: "contacto",
+    body: params.body,
+    external_id: params.externalId ?? null,
+  });
+
+  await supabase
+    .from("conversations")
+    .update({ last_message_at: new Date().toISOString() })
+    .eq("id", params.conversationId)
+    .eq("org_id", params.orgId);
+
+  // Si el lead respondió, cualquier seguimiento pendiente pierde sentido.
+  await supabase
+    .from("follow_ups")
+    .update({ answered: true })
+    .eq("conversation_id", params.conversationId)
+    .eq("answered", false);
+
+  const { data: contacto } = await supabase
+    .from("contacts")
+    .select("*")
+    .eq("id", params.contactId)
+    .maybeSingle();
+
+  await dispatchEvent(supabase, {
+    orgId: params.orgId,
+    kind: "mensaje_entrante",
+    entidades: {
+      conversationId: params.conversationId,
+      contactId: params.contactId,
+    },
+    contacto,
+    canal: params.channel,
+    negocio: { nombre: params.orgName },
+    extra: { texto: params.body },
+  });
+
+  revalidatePath(`/conversaciones/${params.conversationId}`);
 }
 
 export async function sendReply(

@@ -50,7 +50,7 @@ describe.skipIf(!hasCredentials)("Flujo del cotizador", () => {
     orgId = newOrg;
 
     const { data: client } = await admin.client
-      .from("clients")
+      .from("contacts")
       .insert({ org_id: orgId, name: "Cliente Cotiza" })
       .select("id")
       .single();

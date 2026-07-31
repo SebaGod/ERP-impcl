@@ -29,7 +29,7 @@ import { imprentaTemplate } from "@/templates/imprenta";
 const MEMBER_TABLES = [
   "organizations",
   "organization_members",
-  "clients",
+  "contacts",
   "work_order_stages",
   "work_orders",
   "work_order_events",
@@ -85,7 +85,7 @@ describe.skipIf(!hasCredentials)("Aislamiento RLS entre organizaciones", () => {
       .single();
 
     const { data: client } = await db
-      .from("clients")
+      .from("contacts")
       .insert({ org_id: orgId, name: "Cliente Test", rut: "12.345.678-5" })
       .select("id")
       .single();
@@ -288,7 +288,7 @@ describe.skipIf(!hasCredentials)("Aislamiento RLS entre organizaciones", () => {
   });
 
   it("el operario sí ve el tablero: etapas, OTs y clientes", async () => {
-    for (const table of ["work_order_stages", "work_orders", "clients"]) {
+    for (const table of ["work_order_stages", "work_orders", "contacts"]) {
       const { data, error } = await operarioA.client.from(table).select("*");
       expect(error, `${table}: ${error?.message}`).toBeNull();
       expect(data!.length, `${table} vacío para operario`).toBeGreaterThan(0);
@@ -327,7 +327,7 @@ describe.skipIf(!hasCredentials)("Aislamiento RLS entre organizaciones", () => {
 
   it("escrituras cruzadas entre organizaciones son rechazadas", async () => {
     const { data, error } = await adminB.client
-      .from("clients")
+      .from("contacts")
       .insert({ org_id: orgA, name: "Intruso" })
       .select();
     expect(error ?? (data?.length === 0 ? new Error("sin filas") : null)).not.toBeNull();

@@ -58,7 +58,7 @@ describe.skipIf(!hasCredentials)("Flujo de finanzas", () => {
     });
 
     const { data: client } = await admin.client
-      .from("clients")
+      .from("contacts")
       .insert({ org_id: orgId, name: "Cliente Fin" })
       .select("id")
       .single();
