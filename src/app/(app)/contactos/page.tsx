@@ -3,14 +3,14 @@ import Link from "next/link";
 import { Plus, Users } from "lucide-react";
 import { requireOrgContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { Badge } from "@/components/ui/badge";
 import { buttonClasses } from "@/components/ui/button";
 import { EmptyState } from "@/components/empty-state";
 import {
-  lifecycleLabels,
-  lifecycleVariants,
-  type Lifecycle,
-} from "./lifecycle";
+  ContactsTable,
+  type CampoFiltro,
+  type ContactoFila,
+  type EtiquetaFiltro,
+} from "./contacts-table";
 
 export const metadata: Metadata = { title: "Contactos" };
 
@@ -18,11 +18,39 @@ export default async function ContactosPage() {
   const session = await requireOrgContext();
   const supabase = await createClient();
 
-  const { data: contacts } = await supabase
-    .from("contacts")
-    .select("id, name, company, email, phone, lifecycle, score")
-    .eq("org_id", session.org.id)
-    .order("created_at", { ascending: false });
+  const [{ data: contacts }, { data: tags }, { data: fields }] =
+    await Promise.all([
+      supabase
+        .from("contacts")
+        .select(
+          "id, name, company, email, phone, source, lifecycle, score, tags, custom_fields"
+        )
+        .eq("org_id", session.org.id)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("tag_defs")
+        .select("key, label, color")
+        .eq("org_id", session.org.id)
+        .order("label"),
+      supabase
+        .from("custom_field_defs")
+        .select("key, label, field_type, options")
+        .eq("org_id", session.org.id)
+        .eq("entity", "contacto")
+        .order("position"),
+    ]);
+
+  const contactos = (contacts ?? []) as ContactoFila[];
+  const etiquetas = (tags ?? []) as EtiquetaFiltro[];
+  const campos = (fields ?? []).map((campo): CampoFiltro => {
+    const def = campo as Omit<CampoFiltro, "options"> & { options: unknown };
+    return {
+      key: def.key,
+      label: def.label,
+      field_type: def.field_type,
+      options: Array.isArray(def.options) ? (def.options as string[]) : [],
+    };
+  });
 
   const newButton = (
     <Link href="/contactos/nuevo" className={buttonClasses("primary", "md")}>
@@ -37,7 +65,7 @@ export default async function ContactosPage() {
         {newButton}
       </div>
 
-      {(contacts ?? []).length === 0 ? (
+      {contactos.length === 0 ? (
         <EmptyState
           icon={Users}
           title="Tu base de leads y clientes"
@@ -45,54 +73,11 @@ export default async function ContactosPage() {
           action={newButton}
         />
       ) : (
-        <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                <th className="px-4 py-3 font-medium">Nombre</th>
-                <th className="hidden px-4 py-3 font-medium sm:table-cell">
-                  Contacto
-                </th>
-                <th className="px-4 py-3 text-right font-medium">Score</th>
-                <th className="px-4 py-3 text-right font-medium">Etapa</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(contacts ?? []).map((contact) => (
-                <tr
-                  key={contact.id}
-                  className="border-b border-border last:border-0 hover:bg-muted/50"
-                >
-                  <td className="px-4 py-3">
-                    <Link
-                      href={`/contactos/${contact.id}`}
-                      className="font-medium text-primary hover:underline"
-                    >
-                      {contact.name}
-                    </Link>
-                    {contact.company && (
-                      <p className="text-xs text-muted-foreground">
-                        {contact.company}
-                      </p>
-                    )}
-                  </td>
-                  <td className="hidden px-4 py-3 text-muted-foreground sm:table-cell">
-                    {contact.email || contact.phone || "—"}
-                  </td>
-                  <td className="px-4 py-3 text-right tabular-nums">
-                    {contact.score}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <Badge variant={lifecycleVariants[contact.lifecycle as Lifecycle]}>
-                      {lifecycleLabels[contact.lifecycle as Lifecycle] ??
-                        contact.lifecycle}
-                    </Badge>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <ContactsTable
+          contactos={contactos}
+          tags={etiquetas}
+          campos={campos}
+        />
       )}
     </div>
   );

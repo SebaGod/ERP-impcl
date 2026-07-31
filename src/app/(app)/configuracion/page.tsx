@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Plug } from "lucide-react";
+import { ListPlus, Plug, Tag } from "lucide-react";
 import { requireAdminContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/format";
@@ -66,6 +66,30 @@ export default async function ConfiguracionPage() {
             className={buttonClasses("secondary", "md")}
           >
             <Plug className="size-4" /> Administrar integraciones
+          </Link>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Personalización del CRM</CardTitle>
+          <CardDescription>
+            Define qué datos guardas en tus fichas y cómo segmentas tus
+            contactos.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-wrap gap-2">
+          <Link
+            href="/configuracion/campos"
+            className={buttonClasses("secondary", "md")}
+          >
+            <ListPlus className="size-4" /> Campos personalizados
+          </Link>
+          <Link
+            href="/configuracion/etiquetas"
+            className={buttonClasses("secondary", "md")}
+          >
+            <Tag className="size-4" /> Etiquetas
           </Link>
         </CardContent>
       </Card>
