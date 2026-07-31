@@ -24,6 +24,7 @@ import {
   type IntegrationRow,
   type Provider,
 } from "@/lib/channels/providers";
+import { providerIcons } from "@/lib/channels/brand-icons";
 import {
   alternarIntegracion,
   conectarConCredenciales,
@@ -88,6 +89,7 @@ function ProviderCard({
   onAbrir: () => void;
 }) {
   const conectada = Boolean(integracion);
+  const Icon = providerIcons[provider.id];
 
   return (
     <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 shadow-sm">
@@ -97,7 +99,7 @@ function ProviderCard({
             className="flex size-9 shrink-0 items-center justify-center rounded-lg text-sm font-bold text-white"
             style={{ backgroundColor: provider.accent }}
           >
-            {provider.name.charAt(0)}
+            {Icon ? <Icon className="size-5" /> : provider.name.charAt(0)}
           </span>
           <div className="min-w-0">
             <p className="truncate font-medium">{provider.name}</p>
@@ -166,6 +168,7 @@ function ConnectModal({
     initialState
   );
   const [isPending, startTransition] = useTransition();
+  const Icon = providerIcons[provider.id];
 
   return (
     <div
@@ -184,7 +187,7 @@ function ConnectModal({
               className="flex size-10 shrink-0 items-center justify-center rounded-lg text-base font-bold text-white"
               style={{ backgroundColor: provider.accent }}
             >
-              {provider.name.charAt(0)}
+              {Icon ? <Icon className="size-6" /> : provider.name.charAt(0)}
             </span>
             <div>
               <h2 className="font-semibold">{provider.name}</h2>

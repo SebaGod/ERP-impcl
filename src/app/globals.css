@@ -5,12 +5,12 @@
  * rebrandea toda la aplicación.
  */
 :root {
-  --background: #f8fafc;
+  --background: #f6f8fb;
   --foreground: #0f172a;
   --card: #ffffff;
-  --muted: #f1f5f9;
-  --muted-foreground: #64748b;
-  --border: #e2e8f0;
+  --muted: #eef2f7;
+  --muted-foreground: #5b6b7f;
+  --border: #e5e9f0;
   --primary: #1d4ed8;
   --primary-hover: #1e40af;
   --primary-foreground: #ffffff;
@@ -39,4 +39,24 @@
 body {
   background: var(--background);
   color: var(--foreground);
+  font-feature-settings: "ss01";
+  -webkit-font-smoothing: antialiased;
+}
+
+.nav-item {
+  font-size: 13px;
+  letter-spacing: -0.01em;
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 8px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--primary) 18%, transparent);
 }

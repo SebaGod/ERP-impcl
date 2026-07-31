@@ -55,12 +55,12 @@ export function Shell({
   }
 
   const nav = (
-    <nav className="flex flex-1 flex-col gap-4 overflow-y-auto p-3">
+    <nav className="scrollbar-thin flex flex-1 flex-col gap-4 overflow-y-auto p-3">
       {sections.map((section, i) => (
         <div key={section.group} className="flex flex-col gap-1">
           {/* La primera sección no lleva encabezado: es la principal */}
           {i > 0 && (
-            <p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+            <p className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
               {section.label}
             </p>
           )}
@@ -73,13 +73,13 @@ export function Shell({
                 href={item.href}
                 onClick={() => setMobileOpen(false)}
                 className={cn(
-                  "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                  "nav-item flex items-center gap-2.5 rounded-lg px-3 py-1.5 text-[13px] font-medium transition-colors duration-150",
                   active
-                    ? "bg-primary/10 text-primary"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    ? "border-l-2 border-primary bg-primary/10 text-primary"
+                    : "border-l-2 border-transparent text-muted-foreground hover:bg-muted hover:text-foreground"
                 )}
               >
-                <item.icon className="size-4.5 shrink-0" />
+                <item.icon className="size-4 shrink-0" />
                 {item.label}
               </Link>
             );
@@ -91,12 +91,12 @@ export function Shell({
 
   const userFooter = (
     <div className="border-t border-border p-3">
-      <div className="flex items-center gap-3 rounded-lg px-3 py-2">
+      <div className="flex items-center gap-3 rounded-lg px-3 py-1.5">
         <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
           {(userName || userEmail).charAt(0).toUpperCase()}
         </div>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium">{userName || userEmail}</p>
+          <p className="truncate text-[13px] font-medium">{userName || userEmail}</p>
           <p className="truncate text-xs text-muted-foreground">
             {roleLabel || roleLabels[role]}
           </p>
