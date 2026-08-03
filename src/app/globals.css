@@ -17,6 +17,19 @@
   --destructive: #dc2626;
   --success: #16a34a;
   --warning: #d97706;
+
+  /*
+   * Torre de control. El panel de agencia se pinta oscuro a propósito:
+   * es el nivel que está por encima de las subcuentas y quien lo abre
+   * tiene que notar en el primer segundo que cambió de altura, sin leer
+   * un título. Es la misma señal que usan las consolas de operación.
+   */
+  --tower: #0b1120;
+  --tower-elevated: #151f33;
+  --tower-border: #1f2b41;
+  --tower-foreground: #e6ecf5;
+  --tower-muted: #8496ae;
+  --tower-accent: #3b82f6;
 }
 
 @theme inline {
@@ -32,6 +45,12 @@
   --color-destructive: var(--destructive);
   --color-success: var(--success);
   --color-warning: var(--warning);
+  --color-tower: var(--tower);
+  --color-tower-elevated: var(--tower-elevated);
+  --color-tower-border: var(--tower-border);
+  --color-tower-foreground: var(--tower-foreground);
+  --color-tower-muted: var(--tower-muted);
+  --color-tower-accent: var(--tower-accent);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }

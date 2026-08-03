@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { channelLabels } from "@/app/(app)/conversaciones/channels";
-import { BarChart, DonutChart, HBarChart, chartPalette } from "./charts";
+import { BarChart, DonutChart, HBarChart, chartPalette } from "@/components/charts";
 
 export const metadata: Metadata = { title: "Dashboard" };
 

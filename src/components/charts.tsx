@@ -133,6 +133,121 @@ export function HBarChart({
   );
 }
 
+/**
+ * Líneas sobre una grilla, para series de tiempo.
+ *
+ * Cada serie se normaliza contra el máximo común, así que compara bien
+ * magnitudes parecidas (clientes nuevos vs. acumulados). Para mezclar
+ * unidades muy distintas —pesos contra unidades— van dos gráficos, no
+ * dos ejes: un eje secundario invita a leer cruces que no existen.
+ */
+export function LineChart({
+  labels,
+  series,
+  alto = 180,
+  formatValor,
+}: {
+  labels: string[];
+  series: { name: string; values: number[]; color: string }[];
+  alto?: number;
+  formatValor?: (valor: number) => string;
+}) {
+  const todos = series.flatMap((s) => s.values);
+  const max = Math.max(0, ...todos);
+  if (labels.length === 0 || series.length === 0 || max <= 0) return <ChartEmpty />;
+
+  // Coordenadas internas del viewBox; el SVG se estira al contenedor.
+  const ancho = 600;
+  const padX = 8;
+  const padY = 10;
+  const util = alto - padY * 2;
+  const pasos = Math.max(1, labels.length - 1);
+  const formato = formatValor ?? formatNumber;
+
+  const x = (i: number) => padX + (i * (ancho - padX * 2)) / pasos;
+  const y = (v: number) => padY + util - (v / max) * util;
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="relative">
+        <svg
+          viewBox={`0 0 ${ancho} ${alto}`}
+          preserveAspectRatio="none"
+          className="w-full"
+          style={{ height: alto }}
+          role="img"
+        >
+          {/* Grilla horizontal: cuatro cortes bastan para ubicar la altura */}
+          {[0, 0.25, 0.5, 0.75, 1].map((f) => (
+            <line
+              key={f}
+              x1={padX}
+              x2={ancho - padX}
+              y1={padY + util * f}
+              y2={padY + util * f}
+              stroke="var(--border)"
+              strokeWidth={1}
+              vectorEffect="non-scaling-stroke"
+            />
+          ))}
+
+          {series.map((s) => {
+            const puntos = s.values.map((v, i) => `${x(i)},${y(v)}`).join(" ");
+            return (
+              <g key={s.name}>
+                <polyline
+                  points={puntos}
+                  fill="none"
+                  stroke={s.color}
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  vectorEffect="non-scaling-stroke"
+                />
+                {s.values.map((v, i) => (
+                  <circle key={i} cx={x(i)} cy={y(v)} r={2.5} fill={s.color}>
+                    <title>{`${labels[i]} · ${s.name}: ${formato(v)}`}</title>
+                  </circle>
+                ))}
+              </g>
+            );
+          })}
+        </svg>
+
+        <div className="pointer-events-none absolute inset-y-0 left-0 flex flex-col justify-between py-1 text-[10px] tabular-nums text-muted-foreground">
+          <span>{formato(max)}</span>
+          <span>{formato(0)}</span>
+        </div>
+      </div>
+
+      <div className="flex justify-between text-[10px] text-muted-foreground">
+        {labels.map((l, i) => (
+          // Con muchos meses solo se rotula uno de cada dos: si no, se
+          // pisan las etiquetas y no se lee ninguna.
+          <span key={`${l}-${i}`} className="truncate">
+            {labels.length > 8 && i % 2 === 1 ? "" : l}
+          </span>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap gap-x-4 gap-y-1">
+        {series.map((s) => (
+          <span
+            key={s.name}
+            className="flex items-center gap-1.5 text-xs text-muted-foreground"
+          >
+            <span
+              className="h-0.5 w-3 shrink-0 rounded-full"
+              style={{ backgroundColor: s.color }}
+            />
+            {s.name}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /** Donut SVG (técnica de stroke-dasharray sobre circle) con leyenda */
 export function DonutChart({
   items,

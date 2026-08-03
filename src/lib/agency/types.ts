@@ -47,6 +47,80 @@ export interface AgencyOverview {
   snapshots: number;
 }
 
+/**
+ * Un mes de la serie de crecimiento (RPC agency_growth).
+ *
+ * No hay MRR histórico a propósito: la base guarda el cobro vigente de
+ * cada subcuenta, no el historial de lo cobrado. Graficarlo hacia atrás
+ * sería inventar una curva. Lo que sí es un hecho registrado son las
+ * fechas de alta, y de ahí sale todo lo de abajo.
+ */
+export interface CrecimientoMes {
+  mes: string;
+  nuevas_subcuentas: number;
+  subcuentas_acumuladas: number;
+  contactos_nuevos: number;
+  oportunidades_nuevas: number;
+  valor_nuevo: number;
+}
+
+/**
+ * Estado de un canal en una subcuenta (RPC agency_channel_health).
+ *
+ * provider en null significa que esa subcuenta no tiene ninguna
+ * integración conectada: la fila existe igual para que el cliente sin
+ * WhatsApp no desaparezca de la vista.
+ */
+export interface CanalAgencia {
+  org_id: string;
+  org_name: string;
+  org_status: SubaccountStatus;
+  provider: string | null;
+  display_name: string | null;
+  status: string | null;
+  connected_at: string | null;
+  last_event_at: string | null;
+  last_error: string | null;
+  events_24h: number;
+  events_7d: number;
+  errores_7d: number;
+}
+
+/** Una automatización de cualquier subcuenta (RPC agency_automations) */
+export interface AutomatizacionAgencia {
+  org_id: string;
+  org_name: string;
+  automation_id: string;
+  nombre: string;
+  trigger_kind: string;
+  is_active: boolean;
+  run_count: number;
+  last_run_at: string | null;
+  ok_7d: number;
+  omitidas_7d: number;
+  errores_7d: number;
+}
+
+/** Miembro del equipo de la agencia (RPC agency_team) */
+export interface MiembroAgencia {
+  user_id: string;
+  full_name: string;
+  email: string;
+  role: "owner" | "admin";
+  created_at: string;
+}
+
+/** Invitación pendiente al equipo de la agencia */
+export interface InvitacionAgencia {
+  id: string;
+  email: string | null;
+  role: "owner" | "admin";
+  token: string;
+  status: "pendiente" | "aceptada" | "revocada";
+  expires_at: string;
+  created_at: string;
+}
+
 export interface SnapshotRow {
   id: string;
   name: string;
