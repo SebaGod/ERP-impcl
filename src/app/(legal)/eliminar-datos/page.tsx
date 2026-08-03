@@ -1,14 +1,74 @@
 import type { Metadata } from "next";
 import { brand } from "@/config/brand";
+import { createClient } from "@/lib/supabase/server";
+import { formatDateTime } from "@/lib/format";
 
 export const metadata: Metadata = {
   title: "Eliminación de datos",
   description: `Cómo solicitar la eliminación de tus datos en ${brand.name}.`,
 };
 
-const LAST_UPDATED = "15 de junio de 2026";
+const LAST_UPDATED = "3 de agosto de 2026";
 
-export default function EliminarDatosPage() {
+const ESTADOS: Record<string, string> = {
+  pendiente: "Recibida y en proceso",
+  completada: "Completada",
+  sin_datos: "No encontramos datos asociados a esa cuenta",
+};
+
+/**
+ * Estado de una solicitud que llegó desde Meta.
+ *
+ * Cuando alguien quita nuestra aplicación desde Facebook, Meta le entrega un
+ * código y lo manda a esta página. Si el código no dijera nada, la persona
+ * quedaría sin forma de saber si su pedido se está atendiendo, que es
+ * justamente lo que Meta exige que exista.
+ */
+async function EstadoSolicitud({ codigo }: { codigo: string }) {
+  const supabase = await createClient();
+  const { data } = await supabase.rpc("get_data_deletion_status", {
+    p_code: codigo,
+  });
+
+  const solicitud = (
+    (data as { status: string; created_at: string; completed_at: string | null }[] | null) ?? []
+  )[0];
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-4 not-prose">
+      <p className="text-xs uppercase tracking-wide text-muted-foreground">
+        Solicitud {codigo}
+      </p>
+      {solicitud ? (
+        <>
+          <p className="mt-1 text-lg font-semibold">
+            {ESTADOS[solicitud.status] ?? solicitud.status}
+          </p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Recibida el {formatDateTime(solicitud.created_at)}
+            {solicitud.completed_at
+              ? ` · Completada el ${formatDateTime(solicitud.completed_at)}`
+              : " · La procesamos dentro de 30 días y te confirmamos por correo."}
+          </p>
+        </>
+      ) : (
+        <p className="mt-1 text-sm text-muted-foreground">
+          No encontramos ninguna solicitud con ese código. Revisa que esté
+          completo, o escríbenos a{" "}
+          <a href={`mailto:${brand.contactEmail}`}>{brand.contactEmail}</a>.
+        </p>
+      )}
+    </div>
+  );
+}
+
+export default async function EliminarDatosPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ codigo?: string }>;
+}) {
+  const { codigo } = await searchParams;
+
   return (
     <>
       <header className="flex flex-col gap-1">
@@ -17,6 +77,8 @@ export default function EliminarDatosPage() {
           Última actualización: {LAST_UPDATED}
         </p>
       </header>
+
+      {codigo && <EstadoSolicitud codigo={codigo} />}
 
       <p>
         En {brand.name} respetamos tu derecho a eliminar tus datos personales y

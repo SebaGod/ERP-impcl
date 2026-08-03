@@ -24,7 +24,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
  * La configuración de la agencia lee esta constante para no encender una
  * luz verde que miente. Al crear la ruta, se apunta aquí.
  */
-export const RUTA_WEBHOOK_META: string | null = null;
+export const RUTA_WEBHOOK_META: string | null = "/api/webhooks/meta";
 
 export type CanalMeta = "whatsapp" | "instagram" | "messenger";
 

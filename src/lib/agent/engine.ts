@@ -139,7 +139,14 @@ const tools: Anthropic.Tool[] = [
 interface RunContext {
   supabase: SupabaseClient;
   orgId: string;
-  userId: string;
+  /**
+   * A quién se le atribuye lo que el agente cree (por ahora, el dueño de
+   * una oportunidad). Es null cuando el turno nace de un webhook: ahí no
+   * hay nadie conectado, y dejar la oportunidad sin dueño describe la
+   * realidad —está esperando que alguien la tome— mejor que asignársela
+   * a quien conectó el canal hace tres meses.
+   */
+  userId: string | null;
   conversationId: string;
   contact: ContactContext;
   agent: AgentConfig;

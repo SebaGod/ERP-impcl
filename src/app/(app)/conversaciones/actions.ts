@@ -5,6 +5,8 @@ import { revalidatePath } from "next/cache";
 import { requireOrgContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { dispatchEvent } from "@/lib/automation/engine";
+import { enviarMensajeMeta } from "@/lib/channels/meta";
+import { leerCredenciales } from "@/lib/channels/credenciales";
 
 export interface ActionState {
   error: string | null;
@@ -112,6 +114,15 @@ export async function recordInboundMessage(params: {
   revalidatePath(`/conversaciones/${params.conversationId}`);
 }
 
+/**
+ * Responde en una conversación.
+ *
+ * Si la conversación vive en un canal de Meta, la respuesta sale primero
+ * hacia WhatsApp, Instagram o Messenger y recién después se guarda. El
+ * orden no es un detalle: guardar antes de enviar deja en la bandeja una
+ * respuesta que el cliente nunca recibió, y quien la escribió se queda
+ * tranquilo creyendo que contestó.
+ */
 export async function sendReply(
   conversationId: string,
   _prev: ActionState,
@@ -122,6 +133,69 @@ export async function sendReply(
   if (!body) return { error: "Escribe una respuesta" };
 
   const supabase = await createClient();
+
+  const { data: conversacion } = await supabase
+    .from("conversations")
+    .select("channel, external_id")
+    .eq("id", conversationId)
+    .eq("org_id", session.org.id)
+    .maybeSingle();
+  if (!conversacion) return { error: "Conversación no encontrada" };
+
+  const canal = conversacion.channel as string;
+  const esDeMeta =
+    canal === "whatsapp" || canal === "instagram" || canal === "messenger";
+
+  let idProveedor: string | null = null;
+
+  if (esDeMeta) {
+    if (!conversacion.external_id) {
+      return {
+        error:
+          "Esta conversación no tiene con qué identificar al destinatario en el canal. Solo se puede responder desde el teléfono.",
+      };
+    }
+
+    const { data: integracion } = await supabase
+      .from("integrations")
+      .select("credentials, external_id, status")
+      .eq("org_id", session.org.id)
+      .eq("provider", canal)
+      .maybeSingle();
+
+    if (!integracion?.external_id) {
+      return { error: `${canal} no está conectado en esta cuenta.` };
+    }
+    if (integracion.status !== "activa") {
+      return {
+        error: `La conexión de ${canal} no está activa. Revísala en Configuración → Integraciones.`,
+      };
+    }
+
+    const credenciales = leerCredenciales(integracion.credentials);
+    if (!credenciales) {
+      return {
+        error: "No pudimos leer las credenciales del canal. Vuelve a conectarlo.",
+      };
+    }
+
+    const envio = await enviarMensajeMeta({
+      canal,
+      externalId: integracion.external_id,
+      destinatarioId: conversacion.external_id,
+      texto: body,
+      token: credenciales.access_token,
+    });
+
+    if (!envio.ok) {
+      // El motivo de Meta se muestra tal cual: "fuera de la ventana de 24
+      // horas" y "el número no existe" piden acciones distintas, y un
+      // mensaje genérico deja a la persona sin saber cuál es.
+      return { error: `No se pudo enviar: ${envio.error ?? "Meta rechazó el mensaje"}` };
+    }
+    idProveedor = envio.mensajeId ?? null;
+  }
+
   const { error } = await supabase.from("messages").insert({
     org_id: session.org.id,
     conversation_id: conversationId,
@@ -129,6 +203,7 @@ export async function sendReply(
     sender: "usuario",
     body,
     user_id: session.userId,
+    external_id: idProveedor,
   });
   if (error) return { error: "No pudimos enviar la respuesta." };
 

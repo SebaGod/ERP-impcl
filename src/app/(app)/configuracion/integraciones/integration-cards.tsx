@@ -25,6 +25,7 @@ import {
   type Provider,
 } from "@/lib/channels/providers";
 import { providerIcons } from "@/lib/channels/brand-icons";
+import { ConectarMeta } from "./meta-connect";
 import {
   alternarIntegracion,
   conectarConCredenciales,
@@ -34,12 +35,17 @@ import {
 
 const initialState: ActionState = { error: null };
 
+/** Los tres canales que cuelgan de nuestra aplicación de Meta */
+const CANALES_META: string[] = ["whatsapp", "instagram", "messenger"];
+
 interface Props {
   providers: Provider[];
   conectadas: IntegrationRow[];
+  /** El servidor tiene cargadas las credenciales de la aplicación de Meta */
+  metaListo: boolean;
 }
 
-export function IntegrationCards({ providers, conectadas }: Props) {
+export function IntegrationCards({ providers, conectadas, metaListo }: Props) {
   const [abierto, setAbierto] = useState<Provider | null>(null);
   const porProveedor = new Map(conectadas.map((c) => [c.provider, c]));
 
@@ -72,6 +78,7 @@ export function IntegrationCards({ providers, conectadas }: Props) {
         <ConnectModal
           provider={abierto}
           integracion={porProveedor.get(abierto.id)}
+          metaListo={metaListo}
           onCerrar={() => setAbierto(null)}
         />
       )}
@@ -157,10 +164,12 @@ function ProviderCard({
 function ConnectModal({
   provider,
   integracion,
+  metaListo,
   onCerrar,
 }: {
   provider: Provider;
   integracion?: IntegrationRow;
+  metaListo: boolean;
   onCerrar: () => void;
 }) {
   const [state, formAction, pending] = useActionState(
@@ -269,6 +278,12 @@ function ConnectModal({
                 {pending ? "Conectando…" : "Conectar"}
               </Button>
             </form>
+          ) : CANALES_META.includes(provider.id) ? (
+            <ConectarMeta
+              provider={provider}
+              integracion={integracion}
+              metaListo={metaListo}
+            />
           ) : (
             <PendienteDeApp provider={provider} />
           )}
