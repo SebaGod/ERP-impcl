@@ -26,18 +26,27 @@ export function SubaccountLauncher({ orgs }: SubaccountLauncherProps) {
   const contenedor = useRef<HTMLDivElement>(null);
   const campo = useRef<HTMLInputElement>(null);
 
+  // Abrir y cerrar limpia la búsqueda desde el propio manejador, no desde
+  // un efecto: hacerlo en el efecto encadena un render de más cada vez.
+  function alternar() {
+    setBusqueda("");
+    setOpen((v) => !v);
+  }
+
+  function cerrar() {
+    setBusqueda("");
+    setOpen(false);
+  }
+
   useEffect(() => {
-    if (!open) {
-      setBusqueda("");
-      return;
-    }
+    if (!open) return;
     campo.current?.focus();
 
     function alPresionar(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") cerrar();
     }
     function alHacerClic(e: MouseEvent) {
-      if (!contenedor.current?.contains(e.target as Node)) setOpen(false);
+      if (!contenedor.current?.contains(e.target as Node)) cerrar();
     }
 
     document.addEventListener("keydown", alPresionar);
@@ -67,7 +76,7 @@ export function SubaccountLauncher({ orgs }: SubaccountLauncherProps) {
     <div className="relative" ref={contenedor}>
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={alternar}
         disabled={isPending}
         aria-haspopup="menu"
         aria-expanded={open}

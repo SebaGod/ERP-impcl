@@ -13,6 +13,19 @@
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
 
+/**
+ * Ruta donde Meta entrega los mensajes, o null mientras no exista.
+ *
+ * Este módulo sabe interpretar lo que Meta manda, pero interpretar no es
+ * recibir: hace falta además una ruta HTTP publicada a la que Meta pueda
+ * llamar. Sin ella se pueden tener todas las variables de entorno puestas
+ * y no llegar un solo mensaje.
+ *
+ * La configuración de la agencia lee esta constante para no encender una
+ * luz verde que miente. Al crear la ruta, se apunta aquí.
+ */
+export const RUTA_WEBHOOK_META: string | null = null;
+
 export type CanalMeta = "whatsapp" | "instagram" | "messenger";
 
 export interface EventoEntrante {

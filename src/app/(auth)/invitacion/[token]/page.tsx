@@ -12,12 +12,35 @@ const roleLabels: Record<string, string> = {
   operario: "Operario",
 };
 
+/** El rol de agencia tiene su propio vocabulario: no hay operarios */
+const agencyRoleLabels: Record<string, string> = {
+  owner: "Dueño",
+  admin: "Administrador",
+};
+
+interface OrgInvitationRow {
+  org_name: string;
+  role: string;
+  status: string;
+  expired: boolean;
+}
+
+interface AgencyInvitationRow {
+  agency_name: string;
+  role: string;
+  status: string;
+  expired: boolean;
+}
+
 export default async function InvitationPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ token: string }>;
+  searchParams: Promise<{ error?: string }>;
 }) {
   const { token } = await params;
+  const { error: acceptError } = await searchParams;
   const supabase = await createClient();
 
   const [{ data: invitations }, { data: userData }] = await Promise.all([
@@ -25,10 +48,40 @@ export default async function InvitationPage({
     supabase.auth.getUser(),
   ]);
 
-  const invitation = invitations?.[0];
+  const invitation = ((invitations as OrgInvitationRow[] | null) ?? [])[0];
   const user = userData?.user;
 
-  if (!invitation) {
+  // El mismo enlace sirve para dos cosas distintas: entrar a una empresa o
+  // entrar a la agencia que administra varias. Si el token no es de una
+  // organización, todavía puede ser de una agencia.
+  const { data: agencyInvitations } = invitation
+    ? { data: null }
+    : await supabase.rpc("get_agency_invitation_public", { p_token: token });
+
+  const agencyInvitation = (
+    (agencyInvitations as AgencyInvitationRow[] | null) ?? []
+  )[0];
+
+  const found = invitation
+    ? {
+        agencia: false,
+        name: invitation.org_name,
+        roleLabel: roleLabels[invitation.role] ?? invitation.role,
+        status: invitation.status,
+        expired: invitation.expired,
+      }
+    : agencyInvitation
+      ? {
+          agencia: true,
+          name: agencyInvitation.agency_name,
+          roleLabel:
+            agencyRoleLabels[agencyInvitation.role] ?? agencyInvitation.role,
+          status: agencyInvitation.status,
+          expired: agencyInvitation.expired,
+        }
+      : null;
+
+  if (!found) {
     return (
       <InvalidCard>
         Esta invitación no existe. Pide a quien te invitó que genere un nuevo
@@ -37,7 +90,7 @@ export default async function InvitationPage({
     );
   }
 
-  if (invitation.status !== "pendiente") {
+  if (found.status !== "pendiente") {
     return (
       <InvalidCard>
         Esta invitación ya fue utilizada o revocada. Pide un nuevo enlace.
@@ -45,7 +98,7 @@ export default async function InvitationPage({
     );
   }
 
-  if (invitation.expired) {
+  if (found.expired) {
     return (
       <InvalidCard>
         Esta invitación expiró. Pide a quien te invitó que genere un nuevo
@@ -66,24 +119,50 @@ export default async function InvitationPage({
     redirect("/");
   }
 
+  async function acceptAgency() {
+    "use server";
+    const supabase = await createClient();
+    const { error } = await supabase.rpc("accept_agency_invitation", {
+      p_token: token,
+    });
+    if (error) {
+      redirect(`/invitacion/${token}?error=1`);
+    }
+    redirect("/agencia");
+  }
+
   const nextPath = `/invitacion/${token}`;
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Te invitaron a {invitation.org_name}</CardTitle>
+        <CardTitle>
+          {found.agencia
+            ? `Te invitaron al equipo de ${found.name}`
+            : `Te invitaron a ${found.name}`}
+        </CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <p className="text-sm text-muted-foreground">
           Rol asignado:{" "}
-          <strong className="text-foreground">
-            {roleLabels[invitation.role] ?? invitation.role}
-          </strong>
+          <strong className="text-foreground">{found.roleLabel}</strong>
         </p>
+        {found.agencia && (
+          <p className="text-sm text-muted-foreground">
+            Entrarás al panel de la agencia y a todas sus subcuentas como
+            administrador.
+          </p>
+        )}
+        {acceptError && (
+          <p className="text-sm text-destructive">
+            No pudimos aceptar la invitación. Puede que la hayan revocado o que
+            acabe de vencer; pide un enlace nuevo.
+          </p>
+        )}
         {user ? (
-          <form action={accept}>
+          <form action={found.agencia ? acceptAgency : accept}>
             <Button type="submit" className="w-full">
-              Unirme a {invitation.org_name}
+              Unirme a {found.name}
             </Button>
           </form>
         ) : (
