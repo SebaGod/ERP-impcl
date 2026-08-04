@@ -105,7 +105,8 @@ export function SubaccountLauncher({ orgs }: SubaccountLauncherProps) {
                 value={busqueda}
                 onChange={(e) => setBusqueda(e.target.value)}
                 placeholder="Buscar cliente…"
-                className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                // 16px en el teléfono para que iOS no haga zoom al enfocar
+                className="min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-muted-foreground md:text-sm"
               />
             </div>
           )}

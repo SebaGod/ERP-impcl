@@ -140,7 +140,12 @@ export function CalendarView({
         <div className="grid grid-cols-7 gap-px bg-border">
           {celdas.map((dia, i) => {
             if (dia === null) {
-              return <div key={`vacio-${i}`} className="min-h-24 bg-muted/30" />;
+              return (
+                <div
+                  key={`vacio-${i}`}
+                  className="min-h-14 bg-muted/30 sm:min-h-24"
+                />
+              );
             }
 
             const clave = `${mes}-${String(dia).padStart(2, "0")}`;
@@ -154,10 +159,15 @@ export function CalendarView({
                 type="button"
                 onClick={() => setSeleccionado(activo ? null : clave)}
                 className={cn(
-                  "flex min-h-24 flex-col gap-1 p-1.5 text-left transition-colors",
+                  "flex min-h-14 flex-col gap-1 p-1.5 text-left transition-colors sm:min-h-24",
                   activo ? "bg-primary/5" : "bg-card hover:bg-muted/60",
                   esHoy && "ring-2 ring-inset ring-primary"
                 )}
+                aria-label={
+                  delDia.length === 0
+                    ? `${dia}, sin citas`
+                    : `${dia}, ${delDia.length} ${delDia.length === 1 ? "cita" : "citas"}`
+                }
               >
                 <span
                   className={cn(
@@ -168,10 +178,33 @@ export function CalendarView({
                   {dia}
                 </span>
 
+                {/* En el teléfono, puntos.
+                    Una celda de mes mide unos 55px de ancho en una
+                    pantalla de 390: dentro de eso, un chip con hora y
+                    título deja ver "09:0…" y nada más. El punto no
+                    pretende informar qué hay, solo que hay algo, y el
+                    detalle sale al tocar el día en el panel de abajo,
+                    que es como se mira una agenda en el celular. */}
+                {delDia.length > 0 && (
+                  <span className="flex flex-wrap items-center gap-0.5 sm:hidden">
+                    {delDia.slice(0, 3).map((cita) => (
+                      <span
+                        key={cita.id}
+                        className="size-1.5 rounded-full bg-primary"
+                      />
+                    ))}
+                    {delDia.length > 3 && (
+                      <span className="text-[10px] leading-none text-muted-foreground">
+                        +
+                      </span>
+                    )}
+                  </span>
+                )}
+
                 {delDia.slice(0, MAX_CHIPS).map((cita) => (
                   <span
                     key={cita.id}
-                    className="flex items-center gap-1 rounded bg-primary/10 px-1 py-0.5 text-[11px] leading-tight text-primary"
+                    className="hidden items-center gap-1 rounded bg-primary/10 px-1 py-0.5 text-[11px] leading-tight text-primary sm:flex"
                   >
                     <span className="tabular-nums">
                       {hora.format(new Date(cita.starts_at))}
@@ -181,7 +214,7 @@ export function CalendarView({
                 ))}
 
                 {delDia.length > MAX_CHIPS && (
-                  <span className="px-1 text-[11px] text-muted-foreground">
+                  <span className="hidden px-1 text-[11px] text-muted-foreground sm:block">
                     +{delDia.length - MAX_CHIPS} más
                   </span>
                 )}

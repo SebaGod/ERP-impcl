@@ -73,7 +73,12 @@ export function Shell({
                 href={item.href}
                 onClick={() => setMobileOpen(false)}
                 className={cn(
-                  "nav-item flex items-center gap-2.5 rounded-lg px-3 py-1.5 text-[13px] font-medium transition-colors duration-150",
+                  // Más alto en el teléfono. Este mismo bloque se usa en
+                  // la barra lateral del escritorio y en el cajón del
+                  // móvil: con el ratón, 30px de alto se aciertan siempre;
+                  // con el pulgar, no. Como el cajón solo existe bajo md y
+                  // la barra solo sobre md, basta la clase responsiva.
+                  "nav-item flex items-center gap-2.5 rounded-lg px-3 py-3 text-sm font-medium transition-colors duration-150 md:py-1.5 md:text-[13px]",
                   active
                     ? "border-l-2 border-primary bg-primary/10 text-primary"
                     : "border-l-2 border-transparent text-muted-foreground hover:bg-muted hover:text-foreground"

@@ -11,6 +11,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   ChevronsUpDown,
+  Phone,
   Search,
   type LucideIcon,
 } from "lucide-react";
@@ -267,6 +268,85 @@ export function ContactsTable({
     return filtros.dir === "asc" ? "ascending" : "descending";
   }
 
+  /**
+   * Los dos estados salen de dentro de la tabla.
+   *
+   * Antes vivían como un <tr> con colSpan={7}, así que solo existían si
+   * existía la tabla. Ahora la lista se dibuja de dos formas —tarjetas en
+   * el teléfono, tabla desde tablet— y estos mensajes tienen que ser los
+   * mismos en las dos, no una copia en cada rama que después se
+   * desincroniza.
+   */
+  const estadoFallo = (
+    // Consulta caída ≠ cero resultados: aquí no se dibuja el estado
+    // vacío para que nadie concluya que "no hay datos".
+    <div className="px-4 py-12 text-center">
+      <p className="text-sm font-medium">No pudimos cargar la lista</p>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Los filtros siguen activos; vuelve a intentarlo o quítalos.
+      </p>
+      <div className="mt-4 flex justify-center gap-2">
+        <Button variant="secondary" size="sm" onClick={() => router.refresh()}>
+          Reintentar
+        </Button>
+        {hayFiltros && (
+          <Button variant="ghost" size="sm" onClick={limpiar}>
+            Limpiar filtros
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+
+  /** Las etiquetas se pintan igual en la tarjeta y en la fila */
+  function etiquetasDe(claves: string[]) {
+    return (
+      <div className="flex flex-wrap gap-1">
+        {claves.map((key) => {
+          const tag = etiquetasPorKey.get(key);
+          if (!tag) {
+            return (
+              <Badge key={key} variant="outline">
+                {key}
+              </Badge>
+            );
+          }
+          return (
+            <span
+              key={key}
+              className="inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium"
+              style={{
+                backgroundColor: conAlfa(tag.color, "1a"),
+                borderColor: conAlfa(tag.color, "55"),
+                color: tag.color,
+              }}
+            >
+              {tag.label}
+            </span>
+          );
+        })}
+      </div>
+    );
+  }
+
+  const estadoVacio = (
+    <div className="px-4 py-12 text-center">
+      <p className="text-sm font-medium">
+        Ningún contacto calza con esos filtros
+      </p>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Prueba con menos criterios o revisa la búsqueda.
+      </p>
+      {hayFiltros && (
+        <div className="mt-4 flex justify-center">
+          <Button variant="secondary" size="sm" onClick={limpiar}>
+            Limpiar filtros
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 shadow-sm">
@@ -376,7 +456,9 @@ export function ContactsTable({
                   type="button"
                   onClick={() => alternarEtiqueta(tag.key)}
                   aria-pressed={activa}
-                  className="rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors"
+                  // Más alto en el teléfono: un filtro de 22px se falla al
+                  // tocarlo y termina activando la etiqueta de al lado.
+                  className="rounded-full border px-3 py-1.5 text-xs font-medium transition-colors sm:px-2.5 sm:py-0.5"
                   style={{
                     backgroundColor: activa
                       ? tag.color
@@ -420,11 +502,85 @@ export function ContactsTable({
       <div
         aria-busy={pendiente}
         className={cn(
-          "overflow-x-auto rounded-xl border border-border bg-card shadow-sm transition-opacity",
+          "rounded-xl border border-border bg-card shadow-sm transition-opacity",
           pendiente && "opacity-60"
         )}
       >
-        <table className="w-full min-w-[56rem] text-sm">
+        {fallo ? (
+          estadoFallo
+        ) : contactos.length === 0 ? (
+          estadoVacio
+        ) : (
+          <>
+            {/* Tarjetas en el teléfono.
+                La tabla mide 56rem de ancho mínimo: en una pantalla de
+                390px eso es arrastrar de lado por siete columnas para leer
+                un nombre. Acá van los cuatro datos con los que uno busca a
+                alguien desde el celular —quién es, de qué empresa, en qué
+                etapa y cómo llamarlo— y el resto queda en su ficha.
+
+                El teléfono es un enlace tel:, que es lo que uno viene a
+                hacer cuando abre los contactos desde el celular. Por eso
+                la tarjeta entera no es un enlace: si lo fuera, no se
+                podría anidar el de llamar dentro. */}
+            <ul className="divide-y divide-border md:hidden">
+              {contactos.map((contacto) => (
+                <li key={contacto.id} className="flex flex-col gap-1 px-4 py-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      {/* py-1.5 no separa más las tarjetas: agranda el área
+                          que responde al dedo. El gap de la lista se bajó
+                          en la misma medida, así que se ve igual y se
+                          acierta mejor. */}
+                      <Link
+                        href={`/contactos/${contacto.id}`}
+                        className="block truncate py-1.5 font-medium text-primary"
+                      >
+                        {contacto.name}
+                      </Link>
+                      {contacto.company && (
+                        <p className="truncate text-xs text-muted-foreground">
+                          {contacto.company}
+                        </p>
+                      )}
+                    </div>
+                    <Badge
+                      variant={
+                        lifecycleVariants[contacto.lifecycle as Lifecycle] ??
+                        "outline"
+                      }
+                    >
+                      {lifecycleLabels[contacto.lifecycle as Lifecycle] ??
+                        contacto.lifecycle}
+                    </Badge>
+                  </div>
+
+                  {contacto.phone ? (
+                    <a
+                      href={`tel:${contacto.phone}`}
+                      // Llamar es la acción principal desde el celular, así
+                      // que es la que más tiene que costar fallar: 44px de
+                      // alto, que es el mínimo con el que un dedo acierta.
+                      className="flex min-h-11 w-fit items-center gap-1.5 text-sm text-muted-foreground"
+                    >
+                      <Phone className="size-4 shrink-0" />
+                      {contacto.phone}
+                    </a>
+                  ) : (
+                    contacto.email && (
+                      <p className="truncate text-sm text-muted-foreground">
+                        {contacto.email}
+                      </p>
+                    )
+                  )}
+
+                  {contacto.tags.length > 0 && etiquetasDe(contacto.tags)}
+                </li>
+              ))}
+            </ul>
+
+            <div className="hidden overflow-x-auto md:block">
+              <table className="w-full min-w-[56rem] text-sm">
           <thead>
             <tr className="border-b border-border text-left text-xs text-muted-foreground">
               <th aria-sort={ariaSort("nombre")} className="px-4 py-3 font-medium">
@@ -464,53 +620,7 @@ export function ContactsTable({
             </tr>
           </thead>
           <tbody>
-            {fallo ? (
-              // Consulta caída ≠ cero resultados: aquí no se dibuja el estado
-              // vacío para que nadie concluya que "no hay datos".
-              <tr>
-                <td colSpan={7} className="px-4 py-12 text-center">
-                  <p className="text-sm font-medium">
-                    No pudimos cargar la lista
-                  </p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Los filtros siguen activos; vuelve a intentarlo o quítalos.
-                  </p>
-                  <div className="mt-4 flex justify-center gap-2">
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => router.refresh()}
-                    >
-                      Reintentar
-                    </Button>
-                    {hayFiltros && (
-                      <Button variant="ghost" size="sm" onClick={limpiar}>
-                        Limpiar filtros
-                      </Button>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            ) : contactos.length === 0 ? (
-              <tr>
-                <td colSpan={7} className="px-4 py-12 text-center">
-                  <p className="text-sm font-medium">
-                    Ningún contacto calza con esos filtros
-                  </p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Prueba con menos criterios o revisa la búsqueda.
-                  </p>
-                  {hayFiltros && (
-                    <div className="mt-4 flex justify-center">
-                      <Button variant="secondary" size="sm" onClick={limpiar}>
-                        Limpiar filtros
-                      </Button>
-                    </div>
-                  )}
-                </td>
-              </tr>
-            ) : (
-              contactos.map((contacto) => (
+            {contactos.map((contacto) => (
                 <tr
                   key={contacto.id}
                   className="border-b border-border last:border-0 hover:bg-muted/50"
@@ -596,10 +706,12 @@ export function ContactsTable({
                     {formatFecha(contacto.created_at, region)}
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              ))}
+              </tbody>
+              </table>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Con la consulta caída la paginación mentiría ("Página 1 de 1 · 0"). */}
