@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useTransition } from "react";
 import { Check, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { formatCLP } from "@/lib/format";
+import { formatMonto, type ConfigRegional } from "@/lib/locale";
 import {
   moveOpportunity,
   setOpportunityStatus,
@@ -16,6 +16,12 @@ export interface OpportunityCardProps {
   contactId: string;
   contactName: string;
   value: number;
+  /**
+   * Moneda e idioma de la subcuenta: el valor de la oportunidad es plata
+   * que vende el CLIENTE. Baja como prop porque este componente corre en
+   * el navegador, donde no hay sesión que consultar.
+   */
+  region: ConfigRegional;
   prevStageId: string | null;
   nextStageId: string | null;
   /**
@@ -33,6 +39,7 @@ export function OpportunityCard({
   contactId,
   contactName,
   value,
+  region,
   prevStageId,
   nextStageId,
   alMutar,
@@ -70,7 +77,9 @@ export function OpportunityCard({
           {contactName}
         </Link>
         {value > 0 && (
-          <p className="mt-1 text-xs font-medium">{formatCLP(value)}</p>
+          <p className="mt-1 text-xs font-medium">
+            {formatMonto(value, region)}
+          </p>
         )}
       </div>
       <div className="flex items-center justify-between border-t border-border px-1.5 py-1">

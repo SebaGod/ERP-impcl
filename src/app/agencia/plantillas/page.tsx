@@ -3,7 +3,7 @@ import Link from "next/link";
 import { Layers, Plus } from "lucide-react";
 import { requireAgencyContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { formatDate } from "@/lib/format";
+import { formatFecha } from "@/lib/locale";
 import { Badge } from "@/components/ui/badge";
 import { buttonClasses } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -102,7 +102,10 @@ export default async function PlantillasPage() {
                   <div className="min-w-0">
                     <h2 className="truncate font-semibold">{snapshot.name}</h2>
                     <p className="mt-0.5 text-xs text-muted-foreground">
-                      Creada el {formatDate(snapshot.created_at)}
+                      {/* Las plantillas son de la agencia, no de un cliente:
+                          la fecha va en el calendario del equipo que las creó */}
+                      Creada el{" "}
+                      {formatFecha(snapshot.created_at, session.agency.region)}
                       {source ? ` · Capturada de ${source}` : ""}
                     </p>
                   </div>

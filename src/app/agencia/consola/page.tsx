@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { requireAgencyContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { formatDateTime } from "@/lib/format";
+import { formatFechaHora } from "@/lib/locale";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -59,6 +59,11 @@ const estadoWebhook: Record<string, "success" | "warning" | "destructive" | "out
 export default async function ConsolaPage() {
   const session = await requireAgencyContext();
   const supabase = await createClient();
+
+  // La consola mezcla eventos de toda la cartera en una sola línea de tiempo:
+  // se fecha en la zona de la AGENCIA, que es quien la opera. Con la de cada
+  // cliente, dos filas seguidas quedarían en husos distintos.
+  const region = session.agency.region;
 
   const [{ data: integraciones }, { data: eventos }, { data: corridas }, { data: orgs }] =
     await Promise.all([
@@ -185,7 +190,9 @@ export default async function ConsolaPage() {
                         {f.events_24h}
                       </td>
                       <td className="py-2.5 text-muted-foreground">
-                        {f.last_event_at ? formatDateTime(f.last_event_at) : "—"}
+                        {f.last_event_at
+                          ? formatFechaHora(f.last_event_at, region)
+                          : "—"}
                       </td>
                     </tr>
                   ))}
@@ -222,7 +229,7 @@ export default async function ConsolaPage() {
                       {w.error ? ` · ${w.error}` : ""}
                     </span>
                     <span className="shrink-0 text-xs text-muted-foreground">
-                      {formatDateTime(w.created_at)}
+                      {formatFechaHora(w.created_at, region)}
                     </span>
                   </li>
                 ))}
@@ -259,7 +266,7 @@ export default async function ConsolaPage() {
                       {(Number(r.input_tokens ?? 0) + Number(r.output_tokens ?? 0)).toLocaleString("es-CL")} tok
                     </span>
                     <span className="shrink-0 text-xs text-muted-foreground">
-                      {formatDateTime(r.created_at)}
+                      {formatFechaHora(r.created_at, region)}
                     </span>
                   </li>
                 ))}

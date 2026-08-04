@@ -18,7 +18,15 @@ import { buttonClasses } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/empty-state";
 import { cn } from "@/lib/utils";
-import { formatCLP, formatDate, formatRut } from "@/lib/format";
+import { formatRut } from "@/lib/format";
+import {
+  agruparPorMoneda,
+  formatFecha,
+  formatMonto,
+  regionDe,
+  type ConfigRegional,
+  type MontoAgrupado,
+} from "@/lib/locale";
 import {
   statusLabels,
   statusVariants,
@@ -52,6 +60,8 @@ interface Fila {
   row: SubaccountRow;
   cobro: number;
   pipeline: number;
+  /** Moneda en la que vende ESTE cliente; su pipeline está en ella */
+  region: ConfigRegional;
   dias: number;
   alertas: string[];
   busqueda: string;
@@ -154,10 +164,18 @@ function valorNumerico(fila: Fila, clave: ClaveOrden): number {
 export function SubaccountsTable({
   rows,
   referencia,
+  regionAgencia,
 }: {
   rows: SubaccountRow[];
   /** Instante fijado en el servidor contra el que se mide la antigüedad */
   referencia: number;
+  /**
+   * Moneda y zona horaria de la AGENCIA, que el Server Component padre
+   * entrega: la región no se puede leer desde el cliente. Manda en el cobro
+   * mensual y en las fechas, que son plata y calendario de la agencia. El
+   * pipeline no: ese va en la moneda de cada cliente y sale de su fila.
+   */
+  regionAgencia: ConfigRegional;
 }) {
   const [busqueda, setBusqueda] = useState("");
   const [estado, setEstado] = useState<EstadoFiltro>("todas");
@@ -178,6 +196,7 @@ export function SubaccountsTable({
           row,
           cobro,
           pipeline: cifra(row.pipeline_value),
+          region: regionDe(row),
           dias,
           alertas: alertasDe(row, cobro, dias),
           busqueda: [row.name, rut, compactar(rut), row.contact_name ?? ""]
@@ -242,6 +261,8 @@ export function SubaccountsTable({
     return copia;
   }, [visibles, orden]);
 
+  // El cobro sí se suma derecho: todo lo que factura la agencia está en su
+  // propia moneda, aunque los clientes vendan en otras.
   const totales = useMemo(
     () =>
       ordenadas.reduce(
@@ -249,17 +270,17 @@ export function SubaccountsTable({
           cobro: acc.cobro + f.cobro,
           contactos: acc.contactos + f.row.contacts,
           oportunidades: acc.oportunidades + f.row.open_opportunities,
-          pipeline: acc.pipeline + f.pipeline,
           conversaciones: acc.conversaciones + f.row.open_conversations,
         }),
-        {
-          cobro: 0,
-          contactos: 0,
-          oportunidades: 0,
-          pipeline: 0,
-          conversaciones: 0,
-        }
+        { cobro: 0, contactos: 0, oportunidades: 0, conversaciones: 0 }
       ),
+    [ordenadas]
+  );
+
+  // El pipeline no: es plata de los clientes y cada uno vende en lo suyo.
+  // Un solo número sumaría pesos con soles, así que se agrupa por moneda.
+  const pipelinePorMoneda = useMemo(
+    () => agruparPorMoneda(ordenadas, (f) => f.pipeline, (f) => f.region),
     [ordenadas]
   );
 
@@ -412,7 +433,11 @@ export function SubaccountsTable({
 
             <tbody>
               {ordenadas.map((fila) => (
-                <FilaSubcuenta key={fila.row.id} fila={fila} />
+                <FilaSubcuenta
+                  key={fila.row.id}
+                  fila={fila}
+                  regionAgencia={regionAgencia}
+                />
               ))}
             </tbody>
 
@@ -429,10 +454,12 @@ export function SubaccountsTable({
                         rows.length
                       )} subcuentas`}
                 </TdTotal>
-                <TdTotal>{formatCLP(totales.cobro)}</TdTotal>
+                <TdTotal>{formatMonto(totales.cobro, regionAgencia)}</TdTotal>
                 <TdTotal>{formatCount(totales.contactos)}</TdTotal>
                 <TdTotal>{formatCount(totales.oportunidades)}</TdTotal>
-                <TdTotal>{formatCLP(totales.pipeline)}</TdTotal>
+                <TdTotal>
+                  <TotalPorMoneda grupos={pipelinePorMoneda} />
+                </TdTotal>
                 <TdTotal>{formatCount(totales.conversaciones)}</TdTotal>
                 <TdTotal />
                 <TdTotal />
@@ -445,7 +472,39 @@ export function SubaccountsTable({
   );
 }
 
-function FilaSubcuenta({ fila }: { fila: Fila }) {
+/**
+ * Subtotal de dinero que puede venir de varias monedas.
+ *
+ * Con una sola —el caso de hoy— es un monto y el pie se ve igual que
+ * siempre. Con varias son varias líneas, nunca unidas por un "+": sin tipo
+ * de cambio en el sistema, ese total no existe.
+ */
+function TotalPorMoneda({ grupos }: { grupos: MontoAgrupado[] }) {
+  // Sin filas no hay moneda de cliente que respetar: el cero se escribe con
+  // el default de la plataforma. Es una guarda, no un caso real —el pie de
+  // la tabla solo se pinta cuando quedó al menos una fila tras el filtro.
+  if (grupos.length === 0) return <>{formatMonto(0)}</>;
+  if (grupos.length === 1) {
+    return <>{formatMonto(grupos[0].total, grupos[0].config)}</>;
+  }
+  return (
+    <span className="flex flex-col items-end gap-0.5">
+      {grupos.map((grupo) => (
+        <span key={grupo.currency}>
+          {formatMonto(grupo.total, grupo.config)}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+function FilaSubcuenta({
+  fila,
+  regionAgencia,
+}: {
+  fila: Fila;
+  regionAgencia: ConfigRegional;
+}) {
   const { row } = fila;
   const ficha = `/agencia/subcuentas/${row.id}`;
 
@@ -494,7 +553,7 @@ function FilaSubcuenta({ fila }: { fila: Fila }) {
           fila.cobro > 0 ? "font-medium" : "text-muted-foreground"
         )}
       >
-        {formatCLP(fila.cobro)}
+        {formatMonto(fila.cobro, regionAgencia)}
       </td>
 
       <td className="px-3 py-2.5 text-right tabular-nums">
@@ -505,8 +564,10 @@ function FilaSubcuenta({ fila }: { fila: Fila }) {
         {formatCount(row.open_opportunities)}
       </td>
 
+      {/* En la moneda de ESTE cliente: es la plata que él vende, no la que
+          la agencia le cobra */}
       <td className="px-3 py-2.5 text-right whitespace-nowrap tabular-nums">
-        {formatCLP(fila.pipeline)}
+        {formatMonto(fila.pipeline, fila.region)}
       </td>
 
       <td className="px-3 py-2.5 text-right tabular-nums">
@@ -515,7 +576,7 @@ function FilaSubcuenta({ fila }: { fila: Fila }) {
 
       <td
         className="px-3 py-2.5 text-right whitespace-nowrap tabular-nums text-muted-foreground"
-        title={`Cliente desde el ${formatDate(row.created_at)}`}
+        title={`Cliente desde el ${formatFecha(row.created_at, regionAgencia)}`}
       >
         {etiquetaAntiguedad(fila.dias)}
       </td>

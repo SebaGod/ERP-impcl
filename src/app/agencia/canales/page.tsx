@@ -16,7 +16,11 @@ import { createClient } from "@/lib/supabase/server";
 import { buttonClasses } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/empty-state";
-import { formatDate, formatDateTime } from "@/lib/format";
+import {
+  formatFecha,
+  formatFechaHora,
+  type ConfigRegional,
+} from "@/lib/locale";
 import { cn } from "@/lib/utils";
 import {
   getProvider,
@@ -164,7 +168,13 @@ function diagnosticar(
 function construirFila(
   canal: CanalAgencia,
   canalesPorOrg: Map<string, number>,
-  ahora: number
+  ahora: number,
+  /**
+   * Zona horaria de la AGENCIA: esta pantalla es su tablero de operación y
+   * compara canales de toda la cartera. Fechar cada fila en el país de su
+   * cliente pondría horas de husos distintos en la misma columna.
+   */
+  region: ConfigRegional
 ): FilaCanal {
   const base = {
     clave: `${canal.org_id}:${canal.provider ?? "sin-canal"}`,
@@ -219,7 +229,9 @@ function construirFila(
     proveedor: canal.provider,
     proveedorNombre: nombreProveedor(canal.provider),
     cuenta: canal.display_name,
-    conectadoDesde: canal.connected_at ? formatDate(canal.connected_at) : null,
+    conectadoDesde: canal.connected_at
+      ? formatFecha(canal.connected_at, region)
+      : null,
     estadoEtiqueta: estado ? statusLabels[estado] : (canal.status ?? "Sin estado"),
     estadoVariante: estado ? statusVariants[estado] : "outline",
     senal,
@@ -227,7 +239,9 @@ function construirFila(
     eventos24h: aNumero(canal.events_24h),
     eventos7d: aNumero(canal.events_7d),
     errores7d,
-    ultimoEvento: canal.last_event_at ? formatDateTime(canal.last_event_at) : null,
+    ultimoEvento: canal.last_event_at
+      ? formatFechaHora(canal.last_event_at, region)
+      : null,
     ultimoEventoRelativo:
       ultimoEventoMs !== null ? haceCuanto(ultimoEventoMs, ahora) : null,
     ultimoEventoMs,
@@ -388,7 +402,9 @@ export default async function CanalesPage() {
     canalesPorOrg.set(c.org_id, (canalesPorOrg.get(c.org_id) ?? 0) + 1);
   }
 
-  const filas = canales.map((c) => construirFila(c, canalesPorOrg, ahora));
+  const filas = canales.map((c) =>
+    construirFila(c, canalesPorOrg, ahora, session.agency.region)
+  );
 
   const subcuentas = new Set(filas.map((f) => f.orgId)).size;
   const conectadas = filas.filter((f) => f.proveedor !== null);

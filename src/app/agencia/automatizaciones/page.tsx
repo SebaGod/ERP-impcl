@@ -12,7 +12,7 @@ import {
 import { requireAgencyContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
-import { formatCLP } from "@/lib/format";
+import { formatMonto, type ConfigRegional } from "@/lib/locale";
 import { Badge } from "@/components/ui/badge";
 import { buttonClasses } from "@/components/ui/button";
 import {
@@ -163,7 +163,7 @@ export default async function AutomatizacionesAgenciaPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <TablaOportunidades filas={sinReglas} />
+            <TablaOportunidades filas={sinReglas} region={session.agency.region} />
           </CardContent>
         </Card>
       </div>
@@ -310,7 +310,7 @@ export default async function AutomatizacionesAgenciaPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <TablaOportunidades filas={sinReglas} />
+            <TablaOportunidades filas={sinReglas} region={session.agency.region} />
           </CardContent>
         </Card>
       ) : (
@@ -439,7 +439,11 @@ export default async function AutomatizacionesAgenciaPage() {
             ejecuciones totales, del contador de cada regla.
           </p>
         </div>
-        <AutomationsTable rows={reglas} referencia={instanteDeLaConsulta()} />
+        <AutomationsTable
+          rows={reglas}
+          referencia={instanteDeLaConsulta()}
+          region={session.agency.region}
+        />
       </div>
     </div>
   );
@@ -461,7 +465,14 @@ function Encabezado() {
  * Clientes a los que todavía no se les vendió una automatización. Lleva las
  * cifras que sirven para priorizar la conversación, no solo el nombre.
  */
-function TablaOportunidades({ filas }: { filas: SubaccountRow[] }) {
+function TablaOportunidades({
+  filas,
+  region,
+}: {
+  filas: SubaccountRow[];
+  /** Moneda de la AGENCIA: el cobro mensual es lo que ella factura */
+  region: ConfigRegional;
+}) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
@@ -506,7 +517,7 @@ function TablaOportunidades({ filas }: { filas: SubaccountRow[] }) {
                 {formatCount(cifra(s.open_conversations))}
               </td>
               <td className="py-2.5 text-right whitespace-nowrap tabular-nums">
-                {formatCLP(cifra(s.monthly_fee))}
+                {formatMonto(cifra(s.monthly_fee), region)}
               </td>
               <td className="py-2.5">
                 <div className="flex justify-end">

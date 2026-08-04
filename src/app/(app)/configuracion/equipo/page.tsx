@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { requireAdminContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { formatDate } from "@/lib/format";
+import { formatFecha } from "@/lib/locale";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { InviteForm } from "../invite-form";
@@ -21,6 +21,7 @@ const roleLabels: Record<string, string> = {
 
 export default async function EquipoPage() {
   const session = await requireAdminContext();
+  const region = session.org.region;
   const supabase = await createClient();
 
   const [{ data: members }, { data: invitations }, { data: perfiles }] =
@@ -85,7 +86,7 @@ export default async function EquipoPage() {
                       )}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      Desde {formatDate(member.created_at)}
+                      Desde {formatFecha(member.created_at, region)}
                     </p>
                   </div>
                 </div>
@@ -142,7 +143,7 @@ export default async function EquipoPage() {
                   token={invitation.token}
                   email={invitation.email}
                   role={roleLabels[invitation.role] ?? invitation.role}
-                  expiresAt={formatDate(invitation.expires_at)}
+                  expiresAt={formatFecha(invitation.expires_at, region)}
                 />
               ))}
             </div>

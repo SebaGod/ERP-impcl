@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { requireAdminContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { formatCLP, formatDate } from "@/lib/format";
+import { formatMonto, formatFecha } from "@/lib/locale";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { poStatusLabels, poStatusVariants, type PoStatus } from "../po-status";
@@ -21,6 +21,8 @@ export default async function CompraDetallePage({
   const { id } = await params;
   const session = await requireAdminContext();
   const supabase = await createClient();
+  // Costos de insumos: los paga el cliente, van en su moneda.
+  const region = session.org.region;
 
   const { data: po } = await supabase
     .from("purchase_orders")
@@ -79,7 +81,7 @@ export default async function CompraDetallePage({
           </Badge>
         </div>
         <p className="text-sm text-muted-foreground">
-          {supplier?.name} · {formatDate(po.created_at)}
+          {supplier?.name} · {formatFecha(po.created_at, region)}
         </p>
       </div>
 
@@ -125,11 +127,12 @@ export default async function CompraDetallePage({
                               {item.quantity}
                             </td>
                             <td className="py-2 text-right tabular-nums">
-                              {formatCLP(item.unit_cost)}
+                              {formatMonto(item.unit_cost, region)}
                             </td>
                             <td className="py-2 text-right font-medium tabular-nums">
-                              {formatCLP(
-                                Math.round(item.quantity * item.unit_cost)
+                              {formatMonto(
+                                Math.round(item.quantity * item.unit_cost),
+                                region
                               )}
                             </td>
                             {editable && (
@@ -153,7 +156,7 @@ export default async function CompraDetallePage({
                           Total
                         </td>
                         <td className="py-2 text-right font-bold tabular-nums">
-                          {formatCLP(total)}
+                          {formatMonto(total, region)}
                         </td>
                         {editable && <td></td>}
                       </tr>
@@ -186,7 +189,7 @@ export default async function CompraDetallePage({
               </p>
               {po.received_at && (
                 <p className="mt-2 text-xs text-muted-foreground">
-                  Recibida el {formatDate(po.received_at)}
+                  Recibida el {formatFecha(po.received_at, region)}
                 </p>
               )}
             </CardContent>

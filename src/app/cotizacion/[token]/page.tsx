@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import { createClient } from "@/lib/supabase/server";
-import { formatCLP, formatDate, formatRut } from "@/lib/format";
+// El RUT sí es chileno: es un dato del país que emite, no una preferencia
+// de presentación, y por eso sigue viniendo de format.ts.
+import { formatRut } from "@/lib/format";
+import { formatMonto, formatFecha, regionDe } from "@/lib/locale";
 import { brand } from "@/config/brand";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -37,6 +40,15 @@ interface PublicQuote {
   org_name: string;
   org_logo_url: string | null;
   org_rut: string | null;
+  /**
+   * Identidad regional de QUIEN EMITE la cotización. Llegan por la RPC
+   * porque acá no hay sesión de la cual sacarlas: esta página la abre el
+   * cliente del cliente, sin cuenta, solo con el token del enlace.
+   * Nulos si la organización nunca la configuró; regionDe pone Chile.
+   */
+  org_currency: string | null;
+  org_locale: string | null;
+  org_timezone: string | null;
   client_name: string;
   items: PublicItem[];
 }
@@ -63,7 +75,23 @@ export default async function CotizacionPublicaPage({
     );
   }
 
-  // Estado efectivo: una "enviada" vencida se muestra como vencida
+  // Los montos y las fechas se leen como los escribe el negocio que emitió,
+  // no como los escribiría quien abre el enlace ni el servidor: una imprenta
+  // de Lima cotiza en soles aunque su cliente esté mirando desde Santiago.
+  const region = regionDe({
+    timezone: quote.org_timezone,
+    currency: quote.org_currency,
+    locale: quote.org_locale,
+  });
+
+  // Estado efectivo: una "enviada" vencida se muestra como vencida.
+  //
+  // `expired` se toma tal cual de la RPC en vez de recalcularlo acá con la
+  // zona del emisor, aunque la RPC lo mida contra la fecha UTC del servidor.
+  // Es a propósito: respond_to_quote aplica ESE mismo criterio al aceptar o
+  // rechazar. Si la página fuera más permisiva, mostraría los botones y el
+  // servidor devolvería "vencida" al apretarlos. Las dos funciones tienen que
+  // corregirse juntas, y eso es una migración.
   const displayStatus: QuoteStatus =
     quote.status === "enviada" && quote.expired ? "vencida" : quote.status;
   const canRespond = quote.status === "enviada" && !quote.expired;
@@ -120,11 +148,11 @@ export default async function CotizacionPublicaPage({
             </div>
             <div className="sm:text-right">
               <p className="text-xs text-muted-foreground">
-                Emitida el {formatDate(quote.issue_date)}
+                Emitida el {formatFecha(quote.issue_date, region)}
               </p>
               {quote.expires_at && (
                 <p className="text-xs text-muted-foreground">
-                  Válida hasta {formatDate(quote.expires_at)}
+                  Válida hasta {formatFecha(quote.expires_at, region)}
                 </p>
               )}
             </div>
@@ -148,10 +176,10 @@ export default async function CotizacionPublicaPage({
                     {item.quantity}
                   </td>
                   <td className="py-2.5 text-right tabular-nums">
-                    {formatCLP(item.unit_price_net)}
+                    {formatMonto(item.unit_price_net, region)}
                   </td>
                   <td className="py-2.5 text-right font-medium tabular-nums">
-                    {formatCLP(item.line_total)}
+                    {formatMonto(item.line_total, region)}
                   </td>
                 </tr>
               ))}
@@ -163,18 +191,22 @@ export default async function CotizacionPublicaPage({
             <div className="flex w-full max-w-xs flex-col gap-1.5 text-sm">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Neto</span>
-                <span className="tabular-nums">{formatCLP(quote.net_total)}</span>
+                <span className="tabular-nums">
+                  {formatMonto(quote.net_total, region)}
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">
                   IVA ({Math.round(quote.tax_rate * 100)}%)
                 </span>
-                <span className="tabular-nums">{formatCLP(quote.tax_total)}</span>
+                <span className="tabular-nums">
+                  {formatMonto(quote.tax_total, region)}
+                </span>
               </div>
               <div className="flex justify-between border-t border-border pt-1.5 text-base font-bold">
                 <span>Total</span>
                 <span className="tabular-nums">
-                  {formatCLP(quote.gross_total)}
+                  {formatMonto(quote.gross_total, region)}
                 </span>
               </div>
             </div>

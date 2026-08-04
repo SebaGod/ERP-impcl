@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireAdminContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { todayISO } from "@/lib/format";
+import { hoyISO } from "@/lib/locale";
 
 export interface ActionState {
   error: string | null;
@@ -13,7 +13,15 @@ export interface ActionState {
 
 type Db = Awaited<ReturnType<typeof createClient>>;
 
-/** Monto CLP desde el formulario: "1.250.000" o "1250000" → 1250000 */
+/**
+ * Monto del formulario: "1.250.000" o "1250000" → 1250000.
+ *
+ * Descarta todo lo que no sea dígito, así que solo entiende unidades
+ * enteras. No es una decisión de idioma sino del esquema: las columnas de
+ * dinero son `bigint`. En monedas con centavos (PEN, USD) eso significa que
+ * "1500,50" se guardaría como 150050; mientras el esquema no cambie, el
+ * formulario debe recibir montos enteros.
+ */
 function parseAmount(value: FormDataEntryValue | null): number | null {
   const raw = String(value ?? "").trim();
   if (!raw) return 0;
@@ -69,7 +77,10 @@ export async function createQuote(
   if (!clientId) return { error: "Selecciona un cliente" };
 
   const validityDays = session.org.settings.quote_validity_days ?? 15;
-  const issue = todayISO();
+  // issue_date es una columna `date`: el día que se guarda es el del NEGOCIO
+  // que cotiza. Una cotización hecha a las 22:00 en Lima es del día de Lima,
+  // no del día siguiente de Santiago —y de ahí sale también su vencimiento.
+  const issue = hoyISO(session.org.region);
   const expires = new Date(issue);
   expires.setUTCDate(expires.getUTCDate() + validityDays);
 

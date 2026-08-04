@@ -18,7 +18,7 @@ import {
 import { requireAgencyContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { cifradoDisponible } from "@/lib/crypto";
-import { formatCLP, formatDate } from "@/lib/format";
+import { formatFecha, formatMonto } from "@/lib/locale";
 import { Badge } from "@/components/ui/badge";
 import { QueryError } from "@/components/query-error";
 import {
@@ -157,6 +157,9 @@ export default async function ConfiguracionAgenciaPage() {
   const session = await requireAgencyContext();
   const supabase = await createClient();
   const esDueno = session.agency.role === "owner";
+  // Es la ficha de la agencia: su fecha de alta y su cobro mensual van en su
+  // propia moneda y su propio calendario.
+  const region = session.agency.region;
   const ahora = instanteDeLaConsulta();
 
   const [agenciaRes, resumenRes, equipoRes, canalesRes] = await Promise.all([
@@ -269,7 +272,7 @@ export default async function ConfiguracionAgenciaPage() {
           <Dato
             icon={CalendarDays}
             label="Agencia creada"
-            valor={formatDate(agencia.created_at)}
+            valor={formatFecha(agencia.created_at, region)}
             detalle={antiguedad(agencia.created_at, ahora)}
           />
         )}
@@ -532,7 +535,7 @@ export default async function ConfiguracionAgenciaPage() {
                 ? "Aún no hay clientes a los que cobrar"
                 : cobroMensual === 0
                   ? "Ninguna subcuenta tiene cobro mensual asignado"
-                  : `${formatCLP(cobroMensual)} al mes entre activas y en prueba`
+                  : `${formatMonto(cobroMensual, region)} al mes entre activas y en prueba`
             }
           />
         </div>

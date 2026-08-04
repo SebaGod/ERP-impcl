@@ -75,7 +75,14 @@ export default async function InsumosPage() {
               </CardContent>
             </Card>
           ) : (
-            sorted.map((item) => <InventoryRow key={item.id} item={item} />)
+            sorted.map((item) => (
+              // La fila es cliente: la moneda de la subcuenta baja como prop.
+              <InventoryRow
+                key={item.id}
+                item={item}
+                region={session.org.region}
+              />
+            ))
           )}
         </div>
 

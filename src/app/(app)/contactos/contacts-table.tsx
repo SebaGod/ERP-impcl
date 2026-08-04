@@ -19,7 +19,7 @@ import { Button, buttonClasses } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { formatDate } from "@/lib/format";
+import { formatFecha, type ConfigRegional } from "@/lib/locale";
 import type { FieldType } from "@/lib/crm/custom-fields";
 // Solo tipos: se borran al compilar, así que queries.ts no entra al bundle
 // del cliente y la forma de la fila queda amarrada al contrato del servidor.
@@ -67,14 +67,17 @@ interface ContactsTableProps {
   campos: CampoFiltro[];
   /** Catálogo completo de orígenes de la organización (agregado en el servidor) */
   origenes: string[];
+  /**
+   * Zona horaria, moneda e idioma de la subcuenta. Llega como prop porque
+   * desde el cliente no hay sesión que consultar: la pone el Server
+   * Component padre.
+   */
+  region: ConfigRegional;
   /** true cuando la consulta de contactos falló: no es lo mismo que 0 filas */
   fallo: boolean;
 }
 
 const etapas = Object.keys(lifecycleLabels) as Lifecycle[];
-
-// Miles con punto (2.037), como se leen los números en Chile.
-const nf = new Intl.NumberFormat("es-CL");
 
 /** Agrega transparencia a un color #rrggbb; si no lo es, lo deja tal cual. */
 function conAlfa(color: string, alfa: string): string {
@@ -99,8 +102,15 @@ export function ContactsTable({
   tags,
   campos,
   origenes: catalogoOrigenes,
+  region,
   fallo,
 }: ContactsTableProps) {
+  // Miles con punto (2.037) o con coma según el idioma de la subcuenta;
+  // el Intl.* se construye una vez y no por cada conteo de la tabla.
+  const nf = useMemo(
+    () => new Intl.NumberFormat(region.locale),
+    [region.locale]
+  );
   const router = useRouter();
   const pathname = usePathname();
   const parametros = useSearchParams();
@@ -583,7 +593,7 @@ export function ContactsTable({
                     {contacto.source || "—"}
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">
-                    {formatDate(contacto.created_at)}
+                    {formatFecha(contacto.created_at, region)}
                   </td>
                 </tr>
               ))

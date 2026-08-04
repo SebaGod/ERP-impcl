@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { requireAgencyContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { formatDate, formatDateTime } from "@/lib/format";
+import { formatFecha, formatFechaHora } from "@/lib/locale";
 import { Card, CardContent } from "@/components/ui/card";
 import { statusLabels } from "@/lib/agency/types";
 import { cn } from "@/lib/utils";
@@ -121,10 +121,12 @@ export default async function ActividadPage() {
   const orgs = (orgsResult.data as { id: string; name: string }[] | null) ?? [];
   const orgNames = new Map(orgs.map((org) => [org.id, org.name]));
 
-  // Los eventos ya vienen ordenados por fecha: agrupamos por día al vuelo
+  // Los eventos ya vienen ordenados por fecha: agrupamos por día al vuelo.
+  // El día es el de la AGENCIA, que es quien lee su propia bitácora: con la
+  // zona de otro país, un movimiento de las 22:00 caería en el día siguiente.
   const groups: { day: string; events: EventRow[] }[] = [];
   for (const event of events) {
-    const day = formatDate(event.created_at);
+    const day = formatFecha(event.created_at, session.agency.region);
     const current = groups[groups.length - 1];
     if (current && current.day === day) {
       current.events.push(event);
@@ -218,7 +220,10 @@ export default async function ActividadPage() {
                               )}
                             </div>
                             <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-                              {formatDateTime(event.created_at)}
+                              {formatFechaHora(
+                                event.created_at,
+                                session.agency.region
+                              )}
                             </span>
                           </div>
                         </li>

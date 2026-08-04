@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { requireAgencyContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { formatCLP } from "@/lib/format";
+import { formatMonto } from "@/lib/locale";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -27,11 +27,17 @@ import {
 export const metadata: Metadata = { title: "Consumo · Consola" };
 
 /**
- * Tipo de cambio de referencia para poder comparar el cobro mensual (CLP) con
- * el costo de la IA (USD). Es una referencia fija, no el valor del día: por eso
+ * Tipo de cambio de referencia para poder comparar el cobro mensual con el
+ * costo de la IA (USD). Es una referencia fija, no el valor del día: por eso
  * el margen se presenta siempre como estimado y con la nota al pie.
+ *
+ * OJO: es un cambio a UNA moneda, no a "la moneda de quien mire". Aplicarlo
+ * a una agencia que cobra en soles diría "950 soles por dólar" con la misma
+ * seguridad que el resto de la pantalla, y sobre esa cifra se decide subir o
+ * bajar un plan. Sin cambio para su moneda, el margen no se muestra.
  */
-const USD_CLP = 950;
+const MONEDA_DEL_CAMBIO = "CLP";
+const USD_A_MONEDA_DEL_CAMBIO = 950;
 
 /** Ventanas disponibles, en días */
 const PERIODOS = [7, 30, 90] as const;
@@ -239,6 +245,11 @@ export default async function ConsumoPage({
   const session = await requireAgencyContext();
   const supabase = await createClient();
 
+  // El cobro mensual y el margen son plata de la AGENCIA: van en su moneda.
+  // El costo de IA no se toca: son dólares de verdad, no una preferencia.
+  const region = session.agency.region;
+  const hayCambio = region.currency === MONEDA_DEL_CAMBIO;
+
   const { dias } = await searchParams;
   const ventana = leerVentana(dias);
   const desde = inicioDeVentana(ventana);
@@ -306,20 +317,37 @@ export default async function ConsumoPage({
     .map((org) => {
       const consumo = porOrg.get(org.id) ?? VACIO;
       const cobroMensual = Number(org.monthly_fee ?? 0);
-      const costoClp = consumo.costoUsd * USD_CLP;
+      const costoConvertido = consumo.costoUsd * USD_A_MONEDA_DEL_CAMBIO;
       return {
         org,
         consumo,
         cobroMensual,
         tokens: consumo.inputTokens + consumo.outputTokens,
-        margen: cobroMensual * proporcion - costoClp,
+        // Restarle dólares a un cobro en otra moneda sin cambio para ella no
+        // da un margen: da un número. null es la salida honesta.
+        margen: hayCambio ? cobroMensual * proporcion - costoConvertido : null,
       };
     })
     .sort((a, b) => b.consumo.costoUsd - a.consumo.costoUsd || a.org.name.localeCompare(b.org.name, "es"));
 
   const totalCobro = filas.reduce((sum, f) => sum + f.cobroMensual, 0);
-  const totalMargen = filas.reduce((sum, f) => sum + f.margen, 0);
+  const totalMargen = hayCambio
+    ? filas.reduce((sum, f) => sum + (f.margen ?? 0), 0)
+    : null;
   const totalTokens = total.inputTokens + total.outputTokens;
+
+  // El "≈" traduce el gasto en dólares a la moneda del cambio. Solo se
+  // escribe si la agencia cobra en esa misma moneda.
+  const costoConvertido = hayCambio
+    ? formatMonto(
+        Math.round(total.costoUsd * USD_A_MONEDA_DEL_CAMBIO),
+        region
+      )
+    : null;
+  const notaEstimadas =
+    total.estimadas === 1
+      ? "1 corrida sin costo guardado, estimada por tokens"
+      : `${total.estimadas.toLocaleString("es-CL")} corridas sin costo guardado, estimadas por tokens`;
 
   const modelos = [...porModelo.entries()]
     .map(([clave, consumo]) => ({ clave, consumo }))
@@ -390,12 +418,12 @@ export default async function ConsumoPage({
           value={formatUsd(total.costoUsd)}
           hint={
             total.estimadas > 0
-              ? `≈ ${formatCLP(Math.round(total.costoUsd * USD_CLP))}; ${
-                  total.estimadas === 1
-                    ? "1 corrida sin costo guardado, estimada por tokens"
-                    : `${total.estimadas.toLocaleString("es-CL")} corridas sin costo guardado, estimadas por tokens`
-                }`
-              : `≈ ${formatCLP(Math.round(total.costoUsd * USD_CLP))} de referencia`
+              ? costoConvertido
+                ? `≈ ${costoConvertido}; ${notaEstimadas}`
+                : notaEstimadas
+              : costoConvertido
+                ? `≈ ${costoConvertido} de referencia`
+                : "Lo que cobra el proveedor, en dólares"
           }
         />
         <Kpi
@@ -417,7 +445,7 @@ export default async function ConsumoPage({
         <Kpi
           icon={Wallet}
           label="MRR de subcuentas activas"
-          value={formatCLP(mrr)}
+          value={formatMonto(mrr, region)}
           hint={`${orgs.filter((o) => o.status === "activa").length} de ${orgs.length} subcuentas activas`}
         />
       </div>
@@ -494,7 +522,7 @@ export default async function ConsumoPage({
                           {f.org.plan ?? "—"}
                         </td>
                         <td className="py-2.5 text-right tabular-nums">
-                          {formatCLP(f.cobroMensual)}
+                          {formatMonto(f.cobroMensual, region)}
                         </td>
                         <td className="py-2.5 text-right tabular-nums">
                           {f.consumo.corridas.toLocaleString("es-CL")}
@@ -506,12 +534,23 @@ export default async function ConsumoPage({
                           {formatUsd(f.consumo.costoUsd)}
                         </td>
                         <td
+                          title={
+                            f.margen === null
+                              ? `No tenemos tipo de cambio del dólar a ${region.currency}, así que restarle el costo de IA a este cobro daría una cifra inventada.`
+                              : undefined
+                          }
                           className={cn(
                             "py-2.5 text-right font-medium tabular-nums",
-                            f.margen >= 0 ? "text-success" : "text-destructive"
+                            f.margen === null
+                              ? "text-muted-foreground"
+                              : f.margen >= 0
+                                ? "text-success"
+                                : "text-destructive"
                           )}
                         >
-                          {formatCLP(Math.round(f.margen))}
+                          {f.margen === null
+                            ? "—"
+                            : formatMonto(Math.round(f.margen), region)}
                         </td>
                       </tr>
                     ))}
@@ -521,7 +560,7 @@ export default async function ConsumoPage({
                       <td className="py-2.5">Total</td>
                       <td className="py-2.5" />
                       <td className="py-2.5 text-right tabular-nums">
-                        {formatCLP(totalCobro)}
+                        {formatMonto(totalCobro, region)}
                       </td>
                       <td className="py-2.5 text-right tabular-nums">
                         {total.corridas.toLocaleString("es-CL")}
@@ -535,10 +574,16 @@ export default async function ConsumoPage({
                       <td
                         className={cn(
                           "py-2.5 text-right tabular-nums",
-                          totalMargen >= 0 ? "text-success" : "text-destructive"
+                          totalMargen === null
+                            ? "text-muted-foreground"
+                            : totalMargen >= 0
+                              ? "text-success"
+                              : "text-destructive"
                         )}
                       >
-                        {formatCLP(Math.round(totalMargen))}
+                        {totalMargen === null
+                          ? "—"
+                          : formatMonto(Math.round(totalMargen), region)}
                       </td>
                     </tr>
                   </tfoot>
@@ -546,11 +591,23 @@ export default async function ConsumoPage({
               </div>
 
               <div className="flex flex-col gap-1 pt-4 text-xs text-muted-foreground">
-                <p>
-                  Margen estimado con un tipo de cambio de referencia de $950 por
-                  USD. El cobro mensual se prorratea a los {ventana} días del
-                  periodo para compararlo con el costo de IA de esos mismos días.
-                </p>
+                {hayCambio ? (
+                  <p>
+                    Margen estimado con un tipo de cambio de referencia de{" "}
+                    {formatMonto(USD_A_MONEDA_DEL_CAMBIO, region)} por USD. El
+                    cobro mensual se prorratea a los {ventana} días del periodo
+                    para compararlo con el costo de IA de esos mismos días.
+                  </p>
+                ) : (
+                  <p>
+                    El margen no se calcula: tu agencia cobra en{" "}
+                    {region.currency} y el único tipo de cambio de referencia
+                    que tenemos es del dólar a {MONEDA_DEL_CAMBIO}. Restarle el
+                    costo de IA al cobro con un cambio de otra moneda daría una
+                    cifra inventada, y es justo la cifra sobre la que se decide
+                    subir o bajar un plan.
+                  </p>
+                )}
                 <p>
                   El costo sale del que quedó guardado en cada corrida con la
                   tarifa del modelo que la atendió, no de recalcularlo con el

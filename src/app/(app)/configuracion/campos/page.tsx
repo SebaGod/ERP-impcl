@@ -118,7 +118,7 @@ export default async function CamposPage({
         </div>
       )}
 
-      <FieldsTable campos={visibles} />
+      <FieldsTable campos={visibles} region={session.org.region} />
     </div>
   );
 }

@@ -2,7 +2,7 @@
 
 import { useActionState, useRef, useState, useTransition } from "react";
 import { ArrowLeftRight, Pencil, Trash2 } from "lucide-react";
-import { formatCLP } from "@/lib/format";
+import { formatMonto, type ConfigRegional } from "@/lib/locale";
 import { useResetOnSuccess } from "@/lib/use-reset-on-success";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -26,7 +26,14 @@ export interface InventoryItem {
   min_stock: number;
 }
 
-export function InventoryRow({ item }: { item: InventoryItem }) {
+export function InventoryRow({
+  item,
+  region,
+}: {
+  item: InventoryItem;
+  /** Moneda de la subcuenta: la sesión no se lee desde el cliente */
+  region: ConfigRegional;
+}) {
   const [mode, setMode] = useState<"none" | "move" | "edit">("none");
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -39,7 +46,8 @@ export function InventoryRow({ item }: { item: InventoryItem }) {
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium">{item.name}</p>
           <p className="text-xs text-muted-foreground">
-            {formatCLP(item.unit_cost)} / {item.unit} · mínimo {item.min_stock}{" "}
+            {formatMonto(item.unit_cost, region)} / {item.unit} · mínimo{" "}
+            {item.min_stock}{" "}
             {item.unit}
           </p>
         </div>

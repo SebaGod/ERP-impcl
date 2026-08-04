@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { requireAgencyContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { formatDate } from "@/lib/format";
+import { formatFecha } from "@/lib/locale";
 import { Badge } from "@/components/ui/badge";
 import { buttonClasses } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -103,6 +103,9 @@ export default async function EquipoAgenciaPage() {
   const session = await requireAgencyContext();
   const supabase = await createClient();
   const esDueno = session.agency.role === "owner";
+  // Altas y vencimientos del equipo son calendario de la agencia: quien mira
+  // esta pantalla es su gente, no el cliente.
+  const region = session.agency.region;
   const ahora = instanteDeLaConsulta();
   const desdeBitacora = new Date(ahora - DIAS_BITACORA * DIA).toISOString();
 
@@ -164,7 +167,7 @@ export default async function EquipoAgenciaPage() {
       correo: m.email,
       rol: m.role,
       rolEtiqueta: m.role === "owner" ? "Dueño" : "Administrador",
-      desde: formatDate(m.created_at),
+      desde: formatFecha(m.created_at, region),
       desdeMs: new Date(m.created_at).getTime(),
       antiguedad: `En el equipo ${relativo(m.created_at, ahora)}`,
       esTu: m.user_id === session.userId,
@@ -183,9 +186,9 @@ export default async function EquipoAgenciaPage() {
       correo: i.email ?? "Enlace sin correo",
       rolEtiqueta: i.role === "owner" ? "Dueño" : "Administrador",
       estado,
-      creada: formatDate(i.created_at),
+      creada: formatFecha(i.created_at, region),
       creadaMs: new Date(i.created_at).getTime(),
-      vence: formatDate(i.expires_at),
+      vence: formatFecha(i.expires_at, region),
       venceRelativo: vencida
         ? `Venció ${relativo(i.expires_at, ahora)}`
         : i.status === "pendiente"

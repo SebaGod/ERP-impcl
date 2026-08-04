@@ -20,7 +20,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Loader2, Search, Target, TriangleAlert, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { formatCLP, formatDate } from "@/lib/format";
+import { formatFecha, formatMonto, type ConfigRegional } from "@/lib/locale";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
@@ -78,6 +78,12 @@ interface TableroProps {
   filtros: FiltrosUrl;
   /** Mismos filtros ya traducidos para la RPC; `desde` viene congelado del servidor */
   filtrosBoard: FiltrosBoard;
+  /**
+   * Zona horaria, moneda e idioma de la subcuenta. El embudo es plata que
+   * vende el CLIENTE, no lo que cobra la agencia. Viaja como prop porque
+   * este árbol corre en el navegador, sin sesión que consultar.
+   */
+  region: ConfigRegional;
   /** Cambia cuando cambian los filtros de datos: remonta el estado de páginas anexadas */
   claveDatos: string;
 }
@@ -93,17 +99,43 @@ function canalLabel(source: string): string {
   return (channelLabels as Record<string, string>)[source] ?? source;
 }
 
-const nf = new Intl.NumberFormat("es-CL");
+// Los Intl.* son caros de construir y acá se piden por columna y por
+// tarjeta: se memorizan por idioma (y por moneda, en el compacto).
+const cacheEnteros = new Map<string, Intl.NumberFormat>();
+const cacheCompacto = new Map<string, Intl.NumberFormat>();
 
-// El valor de una columna puede ser de miles de millones de pesos; el
-// formato compacto ("$4,5 M") evita que el encabezado desborde la columna.
-// El monto exacto queda disponible en el atributo title.
-const clpCompacto = new Intl.NumberFormat("es-CL", {
-  style: "currency",
-  currency: "CLP",
-  notation: "compact",
-  maximumFractionDigits: 1,
-});
+/**
+ * Conteos con el separador de miles del idioma de la subcuenta: en es-CL
+ * son puntos (2.037) y en es-MX comas.
+ */
+function formatEntero(n: number, region: ConfigRegional): string {
+  let formateador = cacheEnteros.get(region.locale);
+  if (!formateador) {
+    formateador = new Intl.NumberFormat(region.locale);
+    cacheEnteros.set(region.locale, formateador);
+  }
+  return formateador.format(n);
+}
+
+/**
+ * El valor de una columna puede ser de miles de millones; el formato
+ * compacto ("$4,5 M") evita que el encabezado desborde la columna. El
+ * monto exacto queda disponible en el atributo title.
+ */
+function formatCompacto(monto: number, region: ConfigRegional): string {
+  const clave = `${region.locale}|${region.currency}`;
+  let formateador = cacheCompacto.get(clave);
+  if (!formateador) {
+    formateador = new Intl.NumberFormat(region.locale, {
+      style: "currency",
+      currency: region.currency,
+      notation: "compact",
+      maximumFractionDigits: 1,
+    });
+    cacheCompacto.set(clave, formateador);
+  }
+  return formateador.format(monto);
+}
 
 function construirQuery(f: FiltrosUrl): string {
   // Los valores por defecto se omiten para que la URL limpia siga siendo
@@ -127,6 +159,7 @@ export function TableroOportunidades({
   etiquetas,
   filtros,
   filtrosBoard,
+  region,
   claveDatos,
 }: TableroProps) {
   const router = useRouter();
@@ -338,9 +371,9 @@ export function TableroOportunidades({
         )}
         {totalGeneral !== null ? (
           <span>
-            {nf.format(totalGeneral)}{" "}
+            {formatEntero(totalGeneral, region)}{" "}
             {totalGeneral === 1 ? "oportunidad" : "oportunidades"} ·{" "}
-            {formatCLP(valorGeneral ?? 0)} en pipeline
+            {formatMonto(valorGeneral ?? 0, region)} en pipeline
           </span>
         ) : (
           // Sin conteos del servidor no se inventa un número con lo cargado.
@@ -366,6 +399,7 @@ export function TableroOportunidades({
           hayFiltros={hayFiltros}
           totalGeneral={totalGeneral}
           valorGeneral={valorGeneral}
+          region={region}
         />
       </div>
     </div>
@@ -398,6 +432,7 @@ function ContenidoTablero({
   hayFiltros,
   totalGeneral,
   valorGeneral,
+  region,
 }: {
   columnas: ColumnaInicial[];
   filtrosBoard: FiltrosBoard;
@@ -406,6 +441,7 @@ function ContenidoTablero({
   hayFiltros: boolean;
   totalGeneral: number | null;
   valorGeneral: number | null;
+  region: ConfigRegional;
 }) {
   const [estados, setEstados] = useState<Record<string, EstadoColumna>>({});
 
@@ -485,6 +521,7 @@ function ContenidoTablero({
         hayFiltros={hayFiltros}
         totalGeneral={totalGeneral}
         valorGeneral={valorGeneral}
+        region={region}
         onCargarMas={cargarMas}
       />
     );
@@ -511,15 +548,15 @@ function ContenidoTablero({
                 <h2 className="text-sm font-semibold">{col.etapa.name}</h2>
                 {/* Total REAL de la etapa en el servidor, no lo cargado */}
                 <span className="ml-auto rounded-full bg-muted px-2 py-0.5 text-xs tabular-nums text-muted-foreground">
-                  {col.total !== null ? nf.format(col.total) : "—"}
+                  {col.total !== null ? formatEntero(col.total, region) : "—"}
                 </span>
               </div>
               {col.valor !== null && col.valor > 0 && (
                 <p
                   className="mt-1 pl-4.5 text-xs tabular-nums text-muted-foreground"
-                  title={formatCLP(col.valor)}
+                  title={formatMonto(col.valor, region)}
                 >
-                  {clpCompacto.format(col.valor)}
+                  {formatCompacto(col.valor, region)}
                 </p>
               )}
             </div>
@@ -551,6 +588,7 @@ function ContenidoTablero({
                     contactId={t.contact_id}
                     contactName={t.contact_name}
                     value={t.value}
+                    region={region}
                     prevStageId={prevStageId}
                     nextStageId={nextStageId}
                     alMutar={quitarDeExtras}
@@ -562,8 +600,8 @@ function ContenidoTablero({
                 <div className="flex flex-col items-center gap-1.5 pb-1 pt-0.5 text-center">
                   <p className="text-[11px] tabular-nums text-muted-foreground">
                     {col.total !== null
-                      ? `${nf.format(visibles.length)} de ${nf.format(col.total)} cargadas`
-                      : `${nf.format(visibles.length)} cargadas`}
+                      ? `${formatEntero(visibles.length, region)} de ${formatEntero(col.total, region)} cargadas`
+                      : `${formatEntero(visibles.length, region)} cargadas`}
                   </p>
                   {est.falloCarga && (
                     <p className="text-xs text-destructive">
@@ -606,12 +644,14 @@ function VistaLista({
   hayFiltros,
   totalGeneral,
   valorGeneral,
+  region,
   onCargarMas,
 }: {
   filas: FilaColumna[];
   hayFiltros: boolean;
   totalGeneral: number | null;
   valorGeneral: number | null;
+  region: ConfigRegional;
   onCargarMas: (col: ColumnaInicial) => Promise<void>;
 }) {
   const cargadas = filas.reduce((acc, f) => acc + f.visibles.length, 0);
@@ -653,6 +693,7 @@ function VistaLista({
                 col={col}
                 est={est}
                 visibles={visibles}
+                region={region}
                 onCargarMas={onCargarMas}
               />
             ))
@@ -662,11 +703,12 @@ function VistaLista({
           <tfoot>
             <tr className="border-t border-border bg-muted/50 font-medium">
               <td className="px-3 py-2.5 tabular-nums" colSpan={3}>
-                {nf.format(cargadas)} de {nf.format(totalGeneral)}{" "}
+                {formatEntero(cargadas, region)} de{" "}
+                {formatEntero(totalGeneral, region)}{" "}
                 {totalGeneral === 1 ? "oportunidad" : "oportunidades"} cargadas
               </td>
               <td className="px-3 py-2.5 text-right tabular-nums">
-                {formatCLP(valorGeneral ?? 0)}
+                {formatMonto(valorGeneral ?? 0, region)}
               </td>
               <td colSpan={2} />
             </tr>
@@ -681,11 +723,13 @@ function FilasDeEtapa({
   col,
   est,
   visibles,
+  region,
   onCargarMas,
 }: {
   col: ColumnaInicial;
   est: EstadoColumna;
   visibles: TarjetaBoard[];
+  region: ConfigRegional;
   onCargarMas: (col: ColumnaInicial) => Promise<void>;
 }) {
   return (
@@ -727,13 +771,13 @@ function FilasDeEtapa({
             </span>
           </td>
           <td className="px-3 py-2.5 text-right tabular-nums">
-            {t.value > 0 ? formatCLP(t.value) : "—"}
+            {t.value > 0 ? formatMonto(t.value, region) : "—"}
           </td>
           <td className="px-3 py-2.5 text-muted-foreground">
             {t.owner_name ?? "Sin asignar"}
           </td>
           <td className="px-3 py-2.5 tabular-nums text-muted-foreground">
-            {formatDate(t.created_at)}
+            {formatFecha(t.created_at, region)}
           </td>
         </tr>
       ))}
@@ -744,8 +788,8 @@ function FilasDeEtapa({
               <span className="text-[11px] tabular-nums text-muted-foreground">
                 {col.etapa.name}:{" "}
                 {col.total !== null
-                  ? `${nf.format(visibles.length)} de ${nf.format(col.total)} cargadas`
-                  : `${nf.format(visibles.length)} cargadas`}
+                  ? `${formatEntero(visibles.length, region)} de ${formatEntero(col.total, region)} cargadas`
+                  : `${formatEntero(visibles.length, region)} cargadas`}
               </span>
               {est.falloCarga && (
                 <span className="text-xs text-destructive">

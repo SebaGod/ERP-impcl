@@ -3,7 +3,7 @@ import Link from "next/link";
 import { ArrowLeft, Receipt } from "lucide-react";
 import { requireAdminContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { formatCLP, formatDate, todayISO } from "@/lib/format";
+import { formatFecha, formatMonto, hoyISO } from "@/lib/locale";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/empty-state";
@@ -16,7 +16,11 @@ export default async function PorCobrarPage() {
   const session = await requireAdminContext();
   const supabase = await createClient();
 
-  const today = todayISO();
+  const region = session.org.region;
+  // Este "hoy" decide qué factura sale marcada como vencida: tiene que ser
+  // el día del cliente, o una que vence hoy se vería vencida (o al revés)
+  // durante las horas de diferencia entre husos.
+  const today = hoyISO(region);
   const receivables = await getReceivables(supabase, session.org.id);
   const total = receivables.reduce((s, r) => s + r.outstanding, 0);
 
@@ -35,7 +39,7 @@ export default async function PorCobrarPage() {
           <p className="text-sm text-muted-foreground">
             Total pendiente:{" "}
             <span className="font-semibold text-foreground">
-              {formatCLP(total)}
+              {formatMonto(total, region)}
             </span>
           </p>
         )}
@@ -69,13 +73,13 @@ export default async function PorCobrarPage() {
                     </div>
                     <p className="mt-0.5 truncate text-sm">{r.title}</p>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      Total {formatCLP(r.expected)} · abonado{" "}
-                      {formatCLP(r.received)} ·{" "}
+                      Total {formatMonto(r.expected, region)} · abonado{" "}
+                      {formatMonto(r.received, region)} ·{" "}
                       <span className="font-medium text-foreground">
-                        pendiente {formatCLP(r.outstanding)}
+                        pendiente {formatMonto(r.outstanding, region)}
                       </span>
                       {r.paymentDueDate &&
-                        ` · vence ${formatDate(r.paymentDueDate)}`}
+                        ` · vence ${formatFecha(r.paymentDueDate, region)}`}
                     </p>
                   </div>
                   <div className="sm:w-80 sm:shrink-0">

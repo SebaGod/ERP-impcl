@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, Bot, CalendarCheck, User } from "lucide-react";
 import { requireOrgContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { formatDateTime } from "@/lib/format";
+import { formatFechaHora } from "@/lib/locale";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,7 @@ export default async function ProbarAgentePage({
   const { id } = await params;
   const { c: conversationId } = await searchParams;
   const session = await requireOrgContext();
+  const region = session.org.region;
   const supabase = await createClient();
 
   const { data: agent } = await supabase
@@ -130,7 +131,7 @@ export default async function ProbarAgentePage({
                         : m.sender === "usuario"
                           ? "Equipo"
                           : "Tú (cliente)"}{" "}
-                      · {formatDateTime(m.created_at)}
+                      · {formatFechaHora(m.created_at, region)}
                     </span>
                   </div>
                 );
@@ -190,7 +191,7 @@ export default async function ProbarAgentePage({
                   >
                     <p className="font-medium">{appt.title}</p>
                     <p className="text-xs text-muted-foreground">
-                      {formatDateTime(appt.starts_at)}
+                      {formatFechaHora(appt.starts_at, region)}
                     </p>
                   </div>
                 ))

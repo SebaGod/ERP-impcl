@@ -2,7 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { requireOrgContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { formatCLP, formatDateTime } from "@/lib/format";
+import {
+  formatFechaHora,
+  formatMonto,
+  type ConfigRegional,
+} from "@/lib/locale";
 import { cn } from "@/lib/utils";
 import {
   Card,
@@ -60,9 +64,23 @@ function etiquetaCanal(key: string): string {
   );
 }
 
-/** Conteos grandes con separador de miles chileno (29.616, no 29616) */
-function formatEntero(n: number): string {
-  return n.toLocaleString("es-CL");
+// Los Intl.* son caros de construir y acá se piden por KPI y por barra:
+// se memorizan por idioma.
+const cacheEnteros = new Map<string, Intl.NumberFormat>();
+
+/**
+ * Conteos grandes con separador de miles (29.616, no 29616).
+ *
+ * El separador es parte del idioma de la subcuenta: en es-CL son puntos y
+ * en es-MX comas. Escribirlo fijo mostraría 29,616 a un chileno.
+ */
+function formatEntero(n: number, region: ConfigRegional): string {
+  let formateador = cacheEnteros.get(region.locale);
+  if (!formateador) {
+    formateador = new Intl.NumberFormat(region.locale);
+    cacheEnteros.set(region.locale, formateador);
+  }
+  return formateador.format(n);
 }
 
 /**
@@ -122,6 +140,9 @@ export default async function DashboardPage({
     rango === "90" || rango === "365" ? rango : "30";
   const dias = Number(rangoKey);
   const orgId = session.org.id;
+  // Todo el dinero de este panel lo vende el CLIENTE, así que se escribe en
+  // la moneda de la subcuenta, y las citas en su zona horaria.
+  const region = session.org.region;
 
   // El mismo borde de rango que calcula la RPC, para que las listas
   // cortas de abajo cuenten lo mismo que los agregados.
@@ -231,7 +252,7 @@ export default async function DashboardPage({
     label: e.nombre,
     value: e.cantidad,
     color: e.color,
-    hint: `${e.cantidad} · ${formatCLP(e.monto)}`,
+    hint: `${e.cantidad} · ${formatMonto(e.monto, region)}`,
   }));
 
   // ----- Cotizaciones por estado -----
@@ -250,7 +271,7 @@ export default async function DashboardPage({
         label: meta.label,
         value: fila.cantidad,
         color: meta.color,
-        hint: `${fila.cantidad} · ${formatCLP(fila.monto)}`,
+        hint: `${fila.cantidad} · ${formatMonto(fila.monto, region)}`,
       };
     });
   const totalCotizaciones = resumen.cotizaciones.reduce(
@@ -311,33 +332,33 @@ export default async function DashboardPage({
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <Kpi
           label="Ingresos del rango"
-          value={formatCLP(resumen.ingresos)}
+          value={formatMonto(resumen.ingresos, region)}
           hint={`Últimos ${rangos[rangoKey]}`}
         />
         <Kpi
           label="Gastos del rango"
-          value={formatCLP(resumen.gastos)}
+          value={formatMonto(resumen.gastos, region)}
           hint={`Últimos ${rangos[rangoKey]}`}
         />
         <Kpi
           label="Balance"
-          value={formatCLP(balance)}
+          value={formatMonto(balance, region)}
           hint="Ingresos − gastos"
           valueClass={balance >= 0 ? "text-success" : "text-destructive"}
         />
         <Kpi
           label="Valor pipeline abierto"
-          value={formatCLP(valorPipeline)}
-          hint={`${formatEntero(oppsAbiertas)} oportunidades`}
+          value={formatMonto(valorPipeline, region)}
+          hint={`${formatEntero(oppsAbiertas, region)} oportunidades`}
         />
         <Kpi
           label="Conversaciones abiertas"
-          value={formatEntero(resumen.conversaciones.abiertas)}
-          hint={`${formatEntero(resumen.conversaciones.total)} en el rango`}
+          value={formatEntero(resumen.conversaciones.abiertas, region)}
+          hint={`${formatEntero(resumen.conversaciones.total, region)} en el rango`}
         />
         <Kpi
           label="Contactos nuevos"
-          value={formatEntero(resumen.contactos_nuevos)}
+          value={formatEntero(resumen.contactos_nuevos, region)}
           hint={`Últimos ${rangos[rangoKey]}`}
         />
       </div>
@@ -361,7 +382,7 @@ export default async function DashboardPage({
           <CardContent>
             <DonutChart
               items={vendedorItems}
-              centerLabel={formatEntero(oppsAbiertas)}
+              centerLabel={formatEntero(oppsAbiertas, region)}
             />
           </CardContent>
         </Card>
@@ -393,7 +414,7 @@ export default async function DashboardPage({
             <CardTitle>Cotizaciones</CardTitle>
             <CardDescription>
               {totalCotizaciones > 0
-                ? `${formatEntero(totalCotizaciones)} por ${formatCLP(totalCotizado)} en el rango`
+                ? `${formatEntero(totalCotizaciones, region)} por ${formatMonto(totalCotizado, region)} en el rango`
                 : "Distribución por estado"}
             </CardDescription>
           </CardHeader>
@@ -437,7 +458,7 @@ export default async function DashboardPage({
                       </p>
                     </div>
                     <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                      {formatDateTime(cita.starts_at as string)}
+                      {formatFechaHora(cita.starts_at as string, region)}
                     </span>
                   </div>
                 ))}
@@ -493,7 +514,7 @@ export default async function DashboardPage({
                         </Badge>
                       )}
                       <span className="text-sm font-medium tabular-nums">
-                        {formatCLP(o.value)}
+                        {formatMonto(o.value, region)}
                       </span>
                     </div>
                   </div>

@@ -12,7 +12,7 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { formatDateTime } from "@/lib/format";
+import { formatFechaHora, type ConfigRegional } from "@/lib/locale";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -43,9 +43,20 @@ interface Props {
   conectadas: IntegrationRow[];
   /** El servidor tiene cargadas las credenciales de la aplicación de Meta */
   metaListo: boolean;
+  /**
+   * Llega como prop porque un componente de cliente no puede leer la
+   * configuración de la subcuenta: "último mensaje" tiene que decir la hora
+   * del negocio, no la del dispositivo de quien mira.
+   */
+  region: ConfigRegional;
 }
 
-export function IntegrationCards({ providers, conectadas, metaListo }: Props) {
+export function IntegrationCards({
+  providers,
+  conectadas,
+  metaListo,
+  region,
+}: Props) {
   const [abierto, setAbierto] = useState<Provider | null>(null);
   const porProveedor = new Map(conectadas.map((c) => [c.provider, c]));
 
@@ -66,6 +77,7 @@ export function IntegrationCards({ providers, conectadas, metaListo }: Props) {
                   key={provider.id}
                   provider={provider}
                   integracion={porProveedor.get(provider.id)}
+                  region={region}
                   onAbrir={() => setAbierto(provider)}
                 />
               ))}
@@ -79,6 +91,7 @@ export function IntegrationCards({ providers, conectadas, metaListo }: Props) {
           provider={abierto}
           integracion={porProveedor.get(abierto.id)}
           metaListo={metaListo}
+          region={region}
           onCerrar={() => setAbierto(null)}
         />
       )}
@@ -89,10 +102,12 @@ export function IntegrationCards({ providers, conectadas, metaListo }: Props) {
 function ProviderCard({
   provider,
   integracion,
+  region,
   onAbrir,
 }: {
   provider: Provider;
   integracion?: IntegrationRow;
+  region: ConfigRegional;
   onAbrir: () => void;
 }) {
   const conectada = Boolean(integracion);
@@ -135,7 +150,7 @@ function ProviderCard({
 
       {integracion?.last_event_at && (
         <p className="text-xs text-muted-foreground">
-          Último mensaje: {formatDateTime(integracion.last_event_at)}
+          Último mensaje: {formatFechaHora(integracion.last_event_at, region)}
         </p>
       )}
 
@@ -165,11 +180,13 @@ function ConnectModal({
   provider,
   integracion,
   metaListo,
+  region,
   onCerrar,
 }: {
   provider: Provider;
   integracion?: IntegrationRow;
   metaListo: boolean;
+  region: ConfigRegional;
   onCerrar: () => void;
 }) {
   const [state, formAction, pending] = useActionState(
@@ -243,6 +260,7 @@ function ConnectModal({
           {integracion ? (
             <ManageConnection
               integracion={integracion}
+              region={region}
               isPending={isPending}
               startTransition={startTransition}
               onCerrar={onCerrar}
@@ -326,11 +344,13 @@ function PendienteDeApp({ provider }: { provider: Provider }) {
 
 function ManageConnection({
   integracion,
+  region,
   isPending,
   startTransition,
   onCerrar,
 }: {
   integracion: IntegrationRow;
+  region: ConfigRegional;
   isPending: boolean;
   startTransition: (cb: () => void) => void;
   onCerrar: () => void;
@@ -359,7 +379,7 @@ function ManageConnection({
         {integracion.connected_at && (
           <div className="flex justify-between gap-3">
             <dt className="text-muted-foreground">Conectada</dt>
-            <dd>{formatDateTime(integracion.connected_at)}</dd>
+            <dd>{formatFechaHora(integracion.connected_at, region)}</dd>
           </div>
         )}
       </dl>

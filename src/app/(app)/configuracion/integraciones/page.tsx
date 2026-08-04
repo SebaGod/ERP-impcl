@@ -57,6 +57,7 @@ export default async function IntegracionesPage() {
         providers={providers}
         conectadas={conectadas}
         metaListo={metaListo}
+        region={session.org.region}
       />
     </div>
   );

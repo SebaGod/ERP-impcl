@@ -3,7 +3,7 @@ import Link from "next/link";
 import { ArrowLeft, Plus, ShoppingCart } from "lucide-react";
 import { requireAdminContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { formatCLP, formatDate } from "@/lib/format";
+import { formatMonto, formatFecha } from "@/lib/locale";
 import { Badge } from "@/components/ui/badge";
 import { buttonClasses } from "@/components/ui/button";
 import { EmptyState } from "@/components/empty-state";
@@ -14,6 +14,8 @@ export const metadata: Metadata = { title: "Órdenes de compra" };
 export default async function ComprasPage() {
   const session = await requireAdminContext();
   const supabase = await createClient();
+  // Lo que el cliente le paga a SUS proveedores va en su moneda.
+  const region = session.org.region;
 
   const { data: orders } = await supabase
     .from("purchase_orders")
@@ -95,10 +97,10 @@ export default async function ComprasPage() {
                     </td>
                     <td className="px-4 py-3">{supplier?.name ?? "—"}</td>
                     <td className="hidden px-4 py-3 text-muted-foreground sm:table-cell">
-                      {formatDate(po.created_at)}
+                      {formatFecha(po.created_at, region)}
                     </td>
                     <td className="px-4 py-3 text-right font-medium">
-                      {formatCLP(total)}
+                      {formatMonto(total, region)}
                     </td>
                     <td className="px-4 py-3 text-right">
                       <Badge variant={poStatusVariants[po.status as PoStatus]}>

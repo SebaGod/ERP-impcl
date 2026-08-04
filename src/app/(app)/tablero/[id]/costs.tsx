@@ -2,7 +2,7 @@
 
 import { useActionState, useRef, useTransition } from "react";
 import { Plus, Trash2 } from "lucide-react";
-import { formatCLP } from "@/lib/format";
+import { formatMonto, type ConfigRegional } from "@/lib/locale";
 import { useResetOnSuccess } from "@/lib/use-reset-on-success";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,9 +24,12 @@ export interface WorkOrderCost {
 export function CostsPanel({
   workOrderId,
   costs,
+  region,
 }: {
   workOrderId: string;
   costs: WorkOrderCost[];
+  /** Moneda de la subcuenta: la sesión no se lee desde el cliente */
+  region: ConfigRegional;
 }) {
   const [state, formAction, pending] = useActionState(
     addWorkOrderCost.bind(null, workOrderId),
@@ -38,7 +41,12 @@ export function CostsPanel({
   return (
     <div className="flex flex-col gap-2">
       {costs.map((cost) => (
-        <CostRow key={cost.id} workOrderId={workOrderId} cost={cost} />
+        <CostRow
+          key={cost.id}
+          workOrderId={workOrderId}
+          cost={cost}
+          region={region}
+        />
       ))}
       {costs.length === 0 && (
         <p className="text-sm text-muted-foreground">
@@ -74,9 +82,11 @@ export function CostsPanel({
 function CostRow({
   workOrderId,
   cost,
+  region,
 }: {
   workOrderId: string;
   cost: WorkOrderCost;
+  region: ConfigRegional;
 }) {
   const [isPending, startTransition] = useTransition();
 
@@ -89,7 +99,7 @@ function CostRow({
         </span>
       )}
       <span className="text-sm font-medium tabular-nums">
-        {formatCLP(cost.amount)}
+        {formatMonto(cost.amount, region)}
       </span>
       {cost.source === "manual" && (
         <button

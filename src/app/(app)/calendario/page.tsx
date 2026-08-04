@@ -3,7 +3,7 @@ import Link from "next/link";
 import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import { requireOrgContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { TIMEZONE, formatDateTime, todayISO } from "@/lib/format";
+import { formatFechaHora, hoyISO } from "@/lib/locale";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { buttonClasses } from "@/components/ui/button";
 import { EmptyState } from "@/components/empty-state";
@@ -16,20 +16,6 @@ const DIA_MS = 86_400_000;
 
 const CAMPOS =
   "id, title, starts_at, ends_at, status, notes, contact_id, contacts (id, name)";
-
-/** "aaaa-mm-dd" del instante, en hora de Chile */
-const claveDia = new Intl.DateTimeFormat("en-CA", {
-  timeZone: TIMEZONE,
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-});
-
-const nombreMes = new Intl.DateTimeFormat("es-CL", {
-  timeZone: "UTC",
-  month: "long",
-  year: "numeric",
-});
 
 /** Corre el mes "aaaa-mm" en `delta` meses, cruzando el año */
 function desplazarMes(mes: string, delta: number): string {
@@ -77,14 +63,33 @@ export default async function CalendarioPage({
 }) {
   const { mes: mesParam } = await searchParams;
   const session = await requireOrgContext();
+  const region = session.org.region;
   const supabase = await createClient();
 
-  const mesActual = todayISO().slice(0, 7);
+  // "aaaa-mm-dd" del instante en la zona de la subcuenta: es lo que decide a
+  // qué día —y por lo tanto a qué mes— pertenece cada cita. Una cita de las
+  // 22:00 en Lima es del día limeño, no del siguiente en UTC.
+  const claveDia = new Intl.DateTimeFormat("en-CA", {
+    timeZone: region.timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+
+  const nombreMes = new Intl.DateTimeFormat(region.locale, {
+    timeZone: "UTC",
+    month: "long",
+    year: "numeric",
+  });
+
+  const mesActual = hoyISO(region).slice(0, 7);
   const mes = mesParam && MES_VALIDO.test(mesParam) ? mesParam : mesActual;
   const [anio, numero] = mes.split("-").map(Number);
 
-  // La consulta va en UTC pero el día se decide en hora de Chile, que corre
-  // hasta 4 horas: se pide un día de holgura a cada lado y se filtra abajo.
+  // La consulta va en UTC pero el día se decide en la zona de la subcuenta, que
+  // puede correr horas respecto de UTC en cualquier sentido —y ninguna zona se
+  // aleja un día entero—: se pide un día de holgura a cada lado y se filtra
+  // abajo.
   const desde = new Date(Date.UTC(anio, numero - 1, 1) - DIA_MS).toISOString();
   const hasta = new Date(Date.UTC(anio, numero, 1) + DIA_MS).toISOString();
 
@@ -151,7 +156,7 @@ export default async function CalendarioPage({
         <div className="flex flex-col gap-4">
           {/* key: al cambiar de mes React remonta y limpia el día seleccionado
               (los search params por sí solos no remontan) */}
-          <CalendarView key={mes} citas={citas} mes={mes} />
+          <CalendarView key={mes} citas={citas} mes={mes} region={region} />
 
           {citas.length === 0 && (
             <EmptyState
@@ -181,7 +186,7 @@ export default async function CalendarioPage({
                   >
                     <p className="text-sm font-medium">{fila.title}</p>
                     <p className="text-xs text-muted-foreground tabular-nums">
-                      {formatDateTime(fila.starts_at)}
+                      {formatFechaHora(fila.starts_at, region)}
                     </p>
                     {contacto &&
                       (fila.contact_id ? (

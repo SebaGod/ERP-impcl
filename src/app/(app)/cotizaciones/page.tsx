@@ -3,7 +3,7 @@ import Link from "next/link";
 import { FileText, Plus } from "lucide-react";
 import { requireAdminContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { formatCLP, formatDate, todayISO } from "@/lib/format";
+import { formatMonto, formatFecha, hoyISO } from "@/lib/locale";
 import { Badge } from "@/components/ui/badge";
 import { buttonClasses } from "@/components/ui/button";
 import { EmptyState } from "@/components/empty-state";
@@ -19,6 +19,8 @@ export const metadata: Metadata = { title: "Cotizaciones" };
 export default async function CotizacionesPage() {
   const session = await requireAdminContext();
   const supabase = await createClient();
+  // Lo que cotiza el cliente se muestra en SU moneda, no en la nuestra.
+  const region = session.org.region;
 
   const { data: quotes } = await supabase
     .from("quotes")
@@ -28,7 +30,9 @@ export default async function CotizacionesPage() {
     .eq("org_id", session.org.id)
     .order("created_at", { ascending: false });
 
-  const today = todayISO();
+  // "Vencida" se decide contra el día del negocio que emite: en Lima una
+  // cotización sigue vigente cuatro horas después de que en Santiago venció.
+  const today = hoyISO(region);
 
   const newButton = (
     <Link href="/cotizaciones/nueva" className={buttonClasses("primary", "md")}>
@@ -92,13 +96,15 @@ export default async function CotizacionesPage() {
                     </td>
                     <td className="px-4 py-3">{client?.name ?? "—"}</td>
                     <td className="hidden px-4 py-3 text-muted-foreground sm:table-cell">
-                      {formatDate(quote.issue_date)}
+                      {formatFecha(quote.issue_date, region)}
                     </td>
                     <td className="hidden px-4 py-3 text-muted-foreground md:table-cell">
-                      {quote.expires_at ? formatDate(quote.expires_at) : "—"}
+                      {quote.expires_at
+                        ? formatFecha(quote.expires_at, region)
+                        : "—"}
                     </td>
                     <td className="px-4 py-3 text-right font-medium">
-                      {formatCLP(quote.gross_total)}
+                      {formatMonto(quote.gross_total, region)}
                     </td>
                     <td className="px-4 py-3 text-right">
                       <Badge variant={quoteStatusVariants[status]}>

@@ -4,7 +4,12 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, Pencil } from "lucide-react";
 import { requireOrgContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { formatCLP, formatDate, formatDateTime, todayISO } from "@/lib/format";
+import {
+  formatMonto,
+  formatFecha,
+  formatFechaHora,
+  hoyISO,
+} from "@/lib/locale";
 import { Badge } from "@/components/ui/badge";
 import { buttonClasses } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -53,6 +58,9 @@ export default async function OrdenDetallePage({
   const session = await requireOrgContext();
   const supabase = await createClient();
   const isAdmin = session.role === "admin";
+  // Venta, costos y márgenes de esta orden son del cliente: su moneda. Las
+  // horas del historial y de las notas, su zona horaria.
+  const region = session.org.region;
 
   const { data: workOrder } = await supabase
     .from("work_orders")
@@ -147,7 +155,7 @@ export default async function OrdenDetallePage({
   const overdue =
     !workOrder.completed_at &&
     workOrder.due_date !== null &&
-    workOrder.due_date < todayISO();
+    workOrder.due_date < hoyISO(region);
 
   const iva = Math.round(workOrder.amount_net * workOrder.tax_rate);
 
@@ -177,7 +185,7 @@ export default async function OrdenDetallePage({
           <div className="mt-1.5 flex flex-wrap items-center gap-2">
             {workOrder.completed_at && (
               <Badge variant="success">
-                Completada el {formatDate(workOrder.completed_at)}
+                Completada el {formatFecha(workOrder.completed_at, region)}
               </Badge>
             )}
             {overdue && <Badge variant="destructive">Atrasada</Badge>}
@@ -232,7 +240,9 @@ export default async function OrdenDetallePage({
                     Fecha de entrega
                   </dt>
                   <dd className="text-sm font-medium">
-                    {workOrder.due_date ? formatDate(workOrder.due_date) : "—"}
+                    {workOrder.due_date
+                      ? formatFecha(workOrder.due_date, region)
+                      : "—"}
                   </dd>
                 </div>
                 <div>
@@ -248,7 +258,7 @@ export default async function OrdenDetallePage({
                 <div>
                   <dt className="text-xs text-muted-foreground">Creada</dt>
                   <dd className="text-sm font-medium">
-                    {formatDate(workOrder.created_at)}
+                    {formatFecha(workOrder.created_at, region)}
                   </dd>
                 </div>
               </dl>
@@ -259,19 +269,21 @@ export default async function OrdenDetallePage({
                     <div>
                       <p className="text-xs text-muted-foreground">Neto</p>
                       <p className="text-sm font-semibold">
-                        {formatCLP(workOrder.amount_net)}
+                        {formatMonto(workOrder.amount_net, region)}
                       </p>
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground">
                         IVA ({Math.round(workOrder.tax_rate * 100)}%)
                       </p>
-                      <p className="text-sm font-semibold">{formatCLP(iva)}</p>
+                      <p className="text-sm font-semibold">
+                        {formatMonto(iva, region)}
+                      </p>
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground">Total</p>
                       <p className="text-sm font-semibold">
-                        {formatCLP(workOrder.amount_net + iva)}
+                        {formatMonto(workOrder.amount_net + iva, region)}
                       </p>
                     </div>
                   </div>
@@ -295,13 +307,17 @@ export default async function OrdenDetallePage({
                 <CardTitle>Costos y margen real</CardTitle>
               </CardHeader>
               <CardContent className="flex flex-col gap-4">
-                <CostsPanel workOrderId={workOrder.id} costs={costList} />
+                <CostsPanel
+                  workOrderId={workOrder.id}
+                  costs={costList}
+                  region={region}
+                />
                 <div className="rounded-lg bg-muted/50 p-4">
                   <div className="flex flex-wrap gap-x-8 gap-y-2">
                     <div>
                       <p className="text-xs text-muted-foreground">Venta neta</p>
                       <p className="text-sm font-semibold">
-                        {formatCLP(workOrder.amount_net)}
+                        {formatMonto(workOrder.amount_net, region)}
                       </p>
                     </div>
                     <div>
@@ -309,7 +325,7 @@ export default async function OrdenDetallePage({
                         Costo real
                       </p>
                       <p className="text-sm font-semibold">
-                        {formatCLP(realCost)}
+                        {formatMonto(realCost, region)}
                       </p>
                     </div>
                     <div>
@@ -323,7 +339,7 @@ export default async function OrdenDetallePage({
                             : "text-sm font-semibold text-destructive"
                         }
                       >
-                        {formatCLP(realMargin)} ({realMarginPct}%)
+                        {formatMonto(realMargin, region)} ({realMarginPct}%)
                       </p>
                     </div>
                   </div>
@@ -381,7 +397,7 @@ export default async function OrdenDetallePage({
                       </p>
                       <div className="flex items-center gap-1">
                         <span className="text-xs text-muted-foreground">
-                          {formatDateTime(note.created_at)}
+                          {formatFechaHora(note.created_at, region)}
                         </span>
                         {canDelete && (
                           <DeleteNoteButton
@@ -416,7 +432,7 @@ export default async function OrdenDetallePage({
                       {eventLabel(event)}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {formatDateTime(event.created_at)}
+                      {formatFechaHora(event.created_at, region)}
                     </p>
                   </div>
                 </div>

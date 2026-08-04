@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireAdminContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { todayISO } from "@/lib/format";
+import { hoyISO } from "@/lib/locale";
 
 export interface ActionState {
   error: string | null;
@@ -46,7 +46,9 @@ export async function addTransaction(
     type,
     category_id: categoryId || null,
     amount,
-    txn_date: txnDate || todayISO(),
+    // Sin fecha explícita vale el día del CLIENTE, no el nuestro: un
+    // movimiento cargado a las 22:00 en Lima es del día de Lima.
+    txn_date: txnDate || hoyISO(session.org.region),
     description: description || null,
     work_order_id: workOrderId || null,
     created_by: session.userId,
@@ -110,7 +112,8 @@ export async function registerWorkOrderPayment(
     type: "ingreso",
     category_id: category?.id ?? null,
     amount,
-    txn_date: txnDate || todayISO(),
+    // Igual que arriba: el día del pago es el del cliente que cobra.
+    txn_date: txnDate || hoyISO(session.org.region),
     description: `Pago de ${wo.code}`,
     client_id: wo.client_id,
     work_order_id: wo.id,
@@ -195,7 +198,11 @@ export async function generateRecurringForMonth(): Promise<ActionState> {
   const session = await requireAdminContext();
   const supabase = await createClient();
 
-  const today = todayISO();
+  // "El mes en curso" y "el día de hoy" son los del cliente: con la zona
+  // fija, el 1° de mes en Lima se generaría contra el mes anterior y la
+  // marca de idempotencia (last_generated_month) quedaría en el mes que no
+  // corresponde.
+  const today = hoyISO(session.org.region);
   const monthStart = `${today.slice(0, 7)}-01`;
   const day = Number(today.slice(8, 10));
 

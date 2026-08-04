@@ -4,7 +4,12 @@ import Link from "next/link";
 import { useTransition } from "react";
 import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { formatCLP, formatDate, todayISO } from "@/lib/format";
+import {
+  formatMonto,
+  formatFecha,
+  hoyISO,
+  type ConfigRegional,
+} from "@/lib/locale";
 import { moveWorkOrder } from "./actions";
 
 export interface WorkOrderCardProps {
@@ -19,6 +24,8 @@ export interface WorkOrderCardProps {
   completed: boolean;
   prevStageId: string | null;
   nextStageId: string | null;
+  /** Moneda y zona horaria de la subcuenta: la sesión no se lee del cliente */
+  region: ConfigRegional;
 }
 
 export function WorkOrderCard({
@@ -32,10 +39,13 @@ export function WorkOrderCard({
   completed,
   prevStageId,
   nextStageId,
+  region,
 }: WorkOrderCardProps) {
   const [isPending, startTransition] = useTransition();
 
-  const today = todayISO();
+  // "Atrasada" y "vence hoy" se miden contra el día del negocio, no contra el
+  // del navegador de quien mira: un operario de viaje ve las mismas fechas.
+  const today = hoyISO(region);
   const overdue = !completed && dueDate !== null && dueDate < today;
   const dueToday = !completed && dueDate === today;
 
@@ -71,13 +81,13 @@ export function WorkOrderCard({
               )}
             >
               <CalendarDays className="size-3.5" />
-              {formatDate(dueDate)}
+              {formatFecha(dueDate, region)}
               {overdue && " (atrasada)"}
             </span>
           )}
           {amountNet !== null && (
             <span className="ml-auto text-xs font-medium">
-              {formatCLP(amountNet)}
+              {formatMonto(amountNet, region)}
             </span>
           )}
         </div>

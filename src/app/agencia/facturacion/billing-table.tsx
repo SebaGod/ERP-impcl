@@ -16,7 +16,11 @@ import { buttonClasses } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/empty-state";
 import { cn } from "@/lib/utils";
-import { formatCLP, formatDate } from "@/lib/format";
+import {
+  formatFecha,
+  formatMonto,
+  type ConfigRegional,
+} from "@/lib/locale";
 import {
   statusLabels,
   statusVariants,
@@ -82,10 +86,17 @@ function etiquetaMeses(meses: number): string {
 export function BillingTable({
   filas,
   mrr,
+  region,
 }: {
   filas: FilaFacturacion[];
   /** Base contra la que se calcula el aporte de cada cliente */
   mrr: number;
+  /**
+   * Moneda, idioma y zona horaria de la AGENCIA, que el Server Component
+   * padre entrega porque la región no se puede leer desde el cliente. Todo
+   * lo de esta tabla es cobro suyo, no plata que venden los clientes.
+   */
+  region: ConfigRegional;
 }) {
   const [busqueda, setBusqueda] = useState("");
   const [estado, setEstado] = useState<EstadoFiltro>("todas");
@@ -319,7 +330,12 @@ export function BillingTable({
 
             <tbody>
               {ordenadas.map((fila) => (
-                <FilaCliente key={fila.id} fila={fila} mrr={mrr} />
+                <FilaCliente
+                  key={fila.id}
+                  fila={fila}
+                  mrr={mrr}
+                  region={region}
+                />
               ))}
             </tbody>
 
@@ -336,13 +352,13 @@ export function BillingTable({
                         filas.length
                       )} clientes`}
                 </TdTotal>
-                <TdTotal>{formatCLP(totales.cobro)}</TdTotal>
+                <TdTotal>{formatMonto(totales.cobro, region)}</TdTotal>
                 <TdTotal>
                   {mrr > 0
                     ? `${((totales.enMrr / mrr) * 100).toFixed(1)} %`
                     : "—"}
                 </TdTotal>
-                <TdTotal>{formatCLP(totales.anual)}</TdTotal>
+                <TdTotal>{formatMonto(totales.anual, region)}</TdTotal>
                 <TdTotal />
                 <TdTotal />
               </tr>
@@ -354,7 +370,15 @@ export function BillingTable({
   );
 }
 
-function FilaCliente({ fila, mrr }: { fila: FilaFacturacion; mrr: number }) {
+function FilaCliente({
+  fila,
+  mrr,
+  region,
+}: {
+  fila: FilaFacturacion;
+  mrr: number;
+  region: ConfigRegional;
+}) {
   const ficha = `/agencia/subcuentas/${fila.id}`;
   const aporte = mrr > 0 && fila.aportaMrr ? (fila.cobro / mrr) * 100 : null;
 
@@ -393,7 +417,7 @@ function FilaCliente({ fila, mrr }: { fila: FilaFacturacion; mrr: number }) {
           fila.cobro > 0 ? "font-medium" : "text-muted-foreground"
         )}
       >
-        {formatCLP(fila.cobro)}
+        {formatMonto(fila.cobro, region)}
       </td>
 
       <td className="px-3 py-2.5">
@@ -434,12 +458,14 @@ function FilaCliente({ fila, mrr }: { fila: FilaFacturacion; mrr: number }) {
             : "Pausada: no proyectamos ingreso mientras no se reactive"
         }
       >
-        {fila.aportaMrr ? formatCLP(fila.cobro * MESES_DEL_ANIO) : "—"}
+        {fila.aportaMrr
+          ? formatMonto(fila.cobro * MESES_DEL_ANIO, region)
+          : "—"}
       </td>
 
       <td
         className="px-3 py-2.5 text-right whitespace-nowrap tabular-nums text-muted-foreground"
-        title={`Cliente desde el ${formatDate(fila.alta)}`}
+        title={`Cliente desde el ${formatFecha(fila.alta, region)}`}
       >
         {etiquetaMeses(fila.meses)}
       </td>

@@ -3,7 +3,7 @@ import Link from "next/link";
 import { Activity, Plus, Workflow, Zap } from "lucide-react";
 import { requireOrgContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { formatDateTime } from "@/lib/format";
+import { formatFechaHora } from "@/lib/locale";
 import { buttonClasses } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -74,6 +74,7 @@ const ejemplos = [
 
 export default async function AutomatizacionesPage() {
   const session = await requireOrgContext();
+  const region = session.org.region;
   const supabase = await createClient();
 
   const [{ data: automations }, { data: runs }] = await Promise.all([
@@ -214,7 +215,7 @@ export default async function AutomatizacionesPage() {
                       ? "1 ejecución"
                       : `${regla.run_count} ejecuciones`}
                     {regla.last_run_at
-                      ? ` · última el ${formatDateTime(regla.last_run_at)}`
+                      ? ` · última el ${formatFechaHora(regla.last_run_at, region)}`
                       : " · todavía no corre"}
                   </p>
                 </CardContent>
@@ -257,7 +258,7 @@ export default async function AutomatizacionesPage() {
                           </Badge>
                         </div>
                         <span className="text-xs text-muted-foreground">
-                          {formatDateTime(run.created_at)}
+                          {formatFechaHora(run.created_at, region)}
                         </span>
                         {detalle && (
                           <span className="text-xs text-muted-foreground">

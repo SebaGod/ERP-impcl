@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { requireAdminContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { formatCLP, formatDate, todayISO } from "@/lib/format";
+import { formatMonto, formatFecha, hoyISO } from "@/lib/locale";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -28,6 +28,8 @@ export default async function CotizacionDetallePage({
   const { id } = await params;
   const session = await requireAdminContext();
   const supabase = await createClient();
+  // Precios, costos y márgenes de esta cotización son del cliente: su moneda.
+  const region = session.org.region;
 
   const { data: quote } = await supabase
     .from("quotes")
@@ -67,7 +69,8 @@ export default async function CotizacionDetallePage({
         .maybeSingle(),
     ]);
 
-  const today = todayISO();
+  // El vencimiento se mide contra el día del negocio que emite, no el nuestro.
+  const today = hoyISO(region);
   const status = effectiveStatus(
     quote.status as QuoteStatus,
     quote.expires_at,
@@ -111,7 +114,7 @@ export default async function CotizacionDetallePage({
           </Badge>
         </div>
         <p className="text-sm text-muted-foreground">
-          {client?.name} · emitida {formatDate(quote.issue_date)}
+          {client?.name} · emitida {formatFecha(quote.issue_date, region)}
         </p>
       </div>
 
@@ -169,11 +172,12 @@ export default async function CotizacionDetallePage({
                             {item.quantity}
                           </td>
                           <td className="py-2 text-right tabular-nums">
-                            {formatCLP(item.unit_price_net)}
+                            {formatMonto(item.unit_price_net, region)}
                           </td>
                           <td className="py-2 text-right font-medium tabular-nums">
-                            {formatCLP(
-                              Math.round(item.quantity * item.unit_price_net)
+                            {formatMonto(
+                              Math.round(item.quantity * item.unit_price_net),
+                              region
                             )}
                           </td>
                           {isDraft && (
@@ -217,19 +221,19 @@ export default async function CotizacionDetallePage({
               <CardTitle>Totales</CardTitle>
             </CardHeader>
             <CardContent className="flex flex-col gap-2 text-sm">
-              <Row label="Neto" value={formatCLP(quote.net_total)} />
+              <Row label="Neto" value={formatMonto(quote.net_total, region)} />
               <Row
                 label={`IVA (${Math.round(quote.tax_rate * 100)}%)`}
-                value={formatCLP(quote.tax_total)}
+                value={formatMonto(quote.tax_total, region)}
               />
               <div className="flex items-center justify-between border-t border-border pt-2 text-base font-semibold">
                 <span>Total</span>
-                <span>{formatCLP(quote.gross_total)}</span>
+                <span>{formatMonto(quote.gross_total, region)}</span>
               </div>
               <div className="mt-2 rounded-lg bg-muted/50 p-3">
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
                   <span>Costo estimado</span>
-                  <span>{formatCLP(quote.est_cost_total)}</span>
+                  <span>{formatMonto(quote.est_cost_total, region)}</span>
                 </div>
                 <div className="mt-1 flex items-center justify-between">
                   <span className="text-xs text-muted-foreground">
@@ -242,7 +246,7 @@ export default async function CotizacionDetallePage({
                         : "text-sm font-semibold text-destructive"
                     }
                   >
-                    {formatCLP(margin)} ({marginPct}%)
+                    {formatMonto(margin, region)} ({marginPct}%)
                   </span>
                 </div>
               </div>

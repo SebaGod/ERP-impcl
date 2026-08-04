@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { requireAdminContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { formatCLP, formatDate, todayISO } from "@/lib/format";
+import { formatFecha, formatMonto, hoyISO } from "@/lib/locale";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { buttonClasses } from "@/components/ui/button";
@@ -29,7 +29,11 @@ export default async function FinanzasPage() {
   const session = await requireAdminContext();
   const supabase = await createClient();
 
-  const today = todayISO();
+  const region = session.org.region;
+  // "El mes" es el del cliente: a las 22:00 en Lima todavía es el día
+  // anterior en Santiago, y con la zona fija el 1° de mes entraría al
+  // resumen equivocado.
+  const today = hoyISO(region);
   const year = Number(today.slice(0, 4));
   const month = Number(today.slice(5, 7));
   const monthStart = `${today.slice(0, 7)}-01`;
@@ -90,19 +94,19 @@ export default async function FinanzasPage() {
       <div className="grid gap-4 sm:grid-cols-3">
         <SummaryCard
           label="Ingresos del mes"
-          value={formatCLP(totalIncome)}
+          value={formatMonto(totalIncome, region)}
           icon={ArrowUpCircle}
           tone="success"
         />
         <SummaryCard
           label="Egresos del mes"
-          value={formatCLP(totalExpense)}
+          value={formatMonto(totalExpense, region)}
           icon={ArrowDownCircle}
           tone="destructive"
         />
         <SummaryCard
           label="Resultado"
-          value={formatCLP(result)}
+          value={formatMonto(result, region)}
           icon={Wallet}
           tone={result >= 0 ? "success" : "destructive"}
         />
@@ -136,7 +140,7 @@ export default async function FinanzasPage() {
                   <span className="text-sm text-muted-foreground">
                     Costos fijos mensuales
                   </span>
-                  <span className="font-semibold">{formatCLP(fixedCosts)}</span>
+                  <span className="font-semibold">{formatMonto(fixedCosts, region)}</span>
                 </div>
                 <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
                   <div
@@ -154,7 +158,7 @@ export default async function FinanzasPage() {
                   <p className="text-sm text-muted-foreground">
                     Llevas {coverage}% cubierto. Te faltan{" "}
                     <span className="font-semibold text-foreground">
-                      {formatCLP(breakevenGap)}
+                      {formatMonto(breakevenGap, region)}
                     </span>{" "}
                     en ingresos para alcanzar el equilibrio.
                   </p>
@@ -172,7 +176,7 @@ export default async function FinanzasPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-2">
-            <p className="text-2xl font-bold">{formatCLP(totalReceivable)}</p>
+            <p className="text-2xl font-bold">{formatMonto(totalReceivable, region)}</p>
             <p className="text-sm text-muted-foreground">
               {receivables.length === 0
                 ? "Estás al día, sin saldos pendientes."
@@ -236,7 +240,7 @@ export default async function FinanzasPage() {
                         return (
                           <tr key={txn.id} className="border-b border-border">
                             <td className="py-2.5 pr-2 text-muted-foreground">
-                              {formatDate(txn.txn_date)}
+                              {formatFecha(txn.txn_date, region)}
                             </td>
                             <td className="py-2.5 pr-2">
                               <span>{txn.description || category?.name || "—"}</span>
@@ -254,7 +258,7 @@ export default async function FinanzasPage() {
                               }
                             >
                               {isIncome ? "+" : "−"}
-                              {formatCLP(txn.amount)}
+                              {formatMonto(txn.amount, region)}
                             </td>
                             <td className="py-2.5 pl-2 text-right">
                               <DeleteTransactionButton txnId={txn.id} />

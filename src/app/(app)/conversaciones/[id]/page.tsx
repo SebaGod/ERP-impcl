@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, Bot } from "lucide-react";
 import { requireOrgContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { formatDateTime } from "@/lib/format";
+import { formatFechaHora } from "@/lib/locale";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,6 +22,7 @@ export default async function ConversacionDetallePage({
 }) {
   const { id } = await params;
   const session = await requireOrgContext();
+  const region = session.org.region;
   const supabase = await createClient();
 
   const { data: conversation } = await supabase
@@ -122,7 +123,7 @@ export default async function ConversacionDetallePage({
                         : m.sender === "usuario"
                           ? "Equipo"
                           : contact.name}{" "}
-                      · {formatDateTime(m.created_at)}
+                      · {formatFechaHora(m.created_at, region)}
                     </span>
                   </div>
                 );

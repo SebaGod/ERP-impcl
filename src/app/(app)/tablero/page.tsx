@@ -3,7 +3,7 @@ import Link from "next/link";
 import { Kanban, Plus } from "lucide-react";
 import { requireOrgContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { formatCLP } from "@/lib/format";
+import { formatMonto } from "@/lib/locale";
 import { buttonClasses } from "@/components/ui/button";
 import { WorkOrderCard } from "./work-order-card";
 import { BoardRealtime } from "./board-realtime";
@@ -27,6 +27,8 @@ export default async function TableroPage() {
   const session = await requireOrgContext();
   const supabase = await createClient();
   const isAdmin = session.role === "admin";
+  // Todo el dinero del tablero es lo que vende el cliente: su moneda.
+  const region = session.org.region;
 
   const [{ data: stages }, { data: workOrders }, { data: sentQuotes }] =
     await Promise.all([
@@ -109,7 +111,7 @@ export default async function TableroPage() {
                       {quoteClient?.name ?? "—"}
                     </p>
                     <p className="mt-1 text-xs font-medium">
-                      {formatCLP(quote.gross_total)}
+                      {formatMonto(quote.gross_total, region)}
                     </p>
                   </Link>
                 );
@@ -120,6 +122,8 @@ export default async function TableroPage() {
 
         {stageList.map((stage, index) => {
           const stageOrders = byStage.get(stage.id) ?? [];
+          // Suma segura: todas las órdenes de la columna son de esta misma
+          // subcuenta, o sea de una sola moneda.
           const sum = stageOrders.reduce((acc, wo) => acc + wo.amount_net, 0);
           const prevStageId = index > 0 ? stageList[index - 1].id : null;
           const nextStageId =
@@ -131,7 +135,9 @@ export default async function TableroPage() {
               name={stage.name}
               color={stage.color}
               count={stageOrders.length}
-              subtitle={isAdmin && sum > 0 ? `${formatCLP(sum)} neto` : undefined}
+              subtitle={
+                isAdmin && sum > 0 ? `${formatMonto(sum, region)} neto` : undefined
+              }
             >
               {stageOrders.length === 0 ? (
                 <ColumnEmpty text="Sin órdenes de trabajo" />
@@ -149,6 +155,9 @@ export default async function TableroPage() {
                     completed={wo.completed_at !== null}
                     prevStageId={prevStageId}
                     nextStageId={nextStageId}
+                    // La tarjeta es cliente y no puede leer la sesión: la
+                    // región baja como prop desde acá.
+                    region={region}
                   />
                 ))
               )}

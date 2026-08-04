@@ -28,7 +28,8 @@ import {
 } from "@/components/ui/card";
 import { HBarChart, chartPalette } from "@/components/charts";
 import { EmptyState } from "@/components/empty-state";
-import { formatCLP, formatRut } from "@/lib/format";
+import { formatRut } from "@/lib/format";
+import { formatMonto, type ConfigRegional } from "@/lib/locale";
 import { cn } from "@/lib/utils";
 import type { AgencyOverview, SubaccountRow } from "@/lib/agency/types";
 import { BillingTable, type FilaFacturacion } from "./billing-table";
@@ -164,6 +165,10 @@ interface ItemRiesgo {
 export default async function FacturacionPage() {
   const session = await requireAgencyContext();
   const supabase = await createClient();
+
+  // Toda esta pantalla es lo que la AGENCIA factura: va en su moneda, no en
+  // la de cada cliente. Un cliente peruano puede pagarle en pesos chilenos.
+  const region = session.agency.region;
 
   const [resumenRpc, subcuentasRpc] = await Promise.all([
     supabase.rpc("agency_overview", { p_agency: session.agency.id }),
@@ -303,7 +308,7 @@ export default async function FacturacionPage() {
             <Kpi
               icon={Wallet}
               label="MRR"
-              value={formatCLP(resumen.mrr)}
+              value={formatMonto(resumen.mrr, region)}
               hint={
                 <>
                   {plural(resumen.activas, "activa", "activas")}
@@ -316,23 +321,27 @@ export default async function FacturacionPage() {
             <Kpi
               icon={TrendingUp}
               label="Ingreso anual proyectado"
-              value={formatCLP(resumen.mrr * MESES_DEL_ANIO)}
+              value={formatMonto(resumen.mrr * MESES_DEL_ANIO, region)}
               hint="Proyección: el MRR de hoy repetido 12 meses. No es lo facturado."
             />
             <Kpi
               icon={CircleDollarSign}
               label="Cobro promedio por cliente"
-              value={promedio === null ? "—" : formatCLP(Math.round(promedio))}
+              value={
+                promedio === null
+                  ? "—"
+                  : formatMonto(Math.round(promedio), region)
+              }
               hint={detallePromedio}
             />
             <Kpi
               icon={TriangleAlert}
               label="MRR en riesgo"
-              value={formatCLP(enRiesgo)}
+              value={formatMonto(enRiesgo, region)}
               acento={enRiesgo > 0}
               hint={
                 enRiesgo > 0
-                  ? `${formatCLP(mrrPrueba)} en prueba · ${formatCLP(mrrPausado)} pausado`
+                  ? `${formatMonto(mrrPrueba, region)} en prueba · ${formatMonto(mrrPausado, region)} pausado`
                   : "Ninguna cuenta en prueba ni pausada con cobro asignado"
               }
             />
@@ -412,7 +421,7 @@ export default async function FacturacionPage() {
                       label: grupo.plan,
                       value: grupo.mrr,
                       color: chartPalette[i % chartPalette.length],
-                      hint: formatCLP(grupo.mrr),
+                      hint: formatMonto(grupo.mrr, region),
                     }))}
                   />
                 ) : (
@@ -455,7 +464,7 @@ export default async function FacturacionPage() {
                             {grupo.clientes.toLocaleString("es-CL")}
                           </td>
                           <td className="py-2.5 text-right tabular-nums">
-                            {formatCLP(grupo.mrr)}
+                            {formatMonto(grupo.mrr, region)}
                           </td>
                           <td className="py-2.5 text-right tabular-nums text-muted-foreground">
                             {resumen.mrr > 0
@@ -480,7 +489,9 @@ export default async function FacturacionPage() {
                   </CardDescription>
                 </div>
                 {enRiesgo > 0 && (
-                  <Badge variant="warning">{formatCLP(enRiesgo)}</Badge>
+                  <Badge variant="warning">
+                    {formatMonto(enRiesgo, region)}
+                  </Badge>
                 )}
               </CardHeader>
               <CardContent className="p-5 pt-0">
@@ -499,6 +510,7 @@ export default async function FacturacionPage() {
                         nota={`Suman al MRR hoy, pero se pierden si no pasan a plan pagado. Pasados los ${PRUEBA_LARGA} días la prueba ya pide una decisión.`}
                         total={mrrPrueba}
                         items={itemsPrueba}
+                        region={region}
                       />
                     )}
                     {itemsPausados.length > 0 && (
@@ -508,6 +520,7 @@ export default async function FacturacionPage() {
                         nota="Su cobro ya está fuera del MRR: es lo que recuperarías al reactivarlas."
                         total={mrrPausado}
                         items={itemsPausados}
+                        region={region}
                       />
                     )}
                   </div>
@@ -524,7 +537,7 @@ export default async function FacturacionPage() {
                 sostiene. Ordena por cobro para ver de quién depende la agencia.
               </p>
             </div>
-            <BillingTable filas={filas} mrr={resumen.mrr} />
+            <BillingTable filas={filas} mrr={resumen.mrr} region={region} />
           </div>
 
           <p className="max-w-3xl text-xs text-muted-foreground">
@@ -580,12 +593,15 @@ function GrupoRiesgo({
   nota,
   total,
   items,
+  region,
 }: {
   icon: LucideIcon;
   titulo: string;
   nota: string;
   total: number;
   items: ItemRiesgo[];
+  /** Moneda de la agencia: lo que está en riesgo es cobro suyo */
+  region: ConfigRegional;
 }) {
   const visibles = items.slice(0, MAX_EN_LISTA);
 
@@ -600,7 +616,7 @@ function GrupoRiesgo({
           </span>
         </h3>
         <span className="text-sm font-medium tabular-nums">
-          {formatCLP(total)}
+          {formatMonto(total, region)}
         </span>
       </div>
       <p className="text-xs text-muted-foreground">{nota}</p>
@@ -626,7 +642,7 @@ function GrupoRiesgo({
                 </span>
               </span>
               <span className="shrink-0 text-sm tabular-nums">
-                {formatCLP(item.cobro)}
+                {formatMonto(item.cobro, region)}
               </span>
             </Link>
           </li>

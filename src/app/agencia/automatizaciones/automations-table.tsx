@@ -19,7 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { EmptyState } from "@/components/empty-state";
 import { cn } from "@/lib/utils";
-import { formatDateTime } from "@/lib/format";
+import { formatFechaHora, type ConfigRegional } from "@/lib/locale";
 import { getTrigger } from "@/lib/automation/catalog";
 import type { AutomatizacionAgencia } from "@/lib/agency/types";
 
@@ -191,10 +191,18 @@ function comparar(a: Fila, b: Fila, clave: ClaveOrden): number {
 export function AutomationsTable({
   rows,
   referencia,
+  region,
 }: {
   rows: AutomatizacionAgencia[];
   /** Instante fijado en el servidor contra el que se mide "hace cuánto" */
   referencia: number;
+  /**
+   * Zona horaria de la AGENCIA, que baja del Server Component padre porque
+   * la región no se puede leer desde el cliente. La tabla junta reglas de
+   * toda la cartera: fechar cada fila en el país de su cliente pondría
+   * horas de husos distintos en la misma columna.
+   */
+  region: ConfigRegional;
 }) {
   const [busqueda, setBusqueda] = useState("");
   const [org, setOrg] = useState("todas");
@@ -482,7 +490,12 @@ export function AutomationsTable({
 
             <tbody>
               {ordenadas.map((fila) => (
-                <FilaRegla key={fila.row.automation_id} fila={fila} referencia={referencia} />
+                <FilaRegla
+                  key={fila.row.automation_id}
+                  fila={fila}
+                  referencia={referencia}
+                  region={region}
+                />
               ))}
             </tbody>
 
@@ -514,7 +527,15 @@ export function AutomationsTable({
   );
 }
 
-function FilaRegla({ fila, referencia }: { fila: Fila; referencia: number }) {
+function FilaRegla({
+  fila,
+  referencia,
+  region,
+}: {
+  fila: Fila;
+  referencia: number;
+  region: ConfigRegional;
+}) {
   const { row, marca } = fila;
   const conError = fila.errores > 0;
 
@@ -615,7 +636,7 @@ function FilaRegla({ fila, referencia }: { fila: Fila; referencia: number }) {
         className="px-3 py-2.5 text-right whitespace-nowrap tabular-nums text-muted-foreground"
         title={
           row.last_run_at
-            ? `Última vez que ejecutó sus acciones: ${formatDateTime(row.last_run_at)}`
+            ? `Última vez que ejecutó sus acciones: ${formatFechaHora(row.last_run_at, region)}`
             : "Todavía no ha ejecutado sus acciones ninguna vez"
         }
       >

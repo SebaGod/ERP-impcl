@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, CalendarCheck, MessageSquare } from "lucide-react";
 import { requireOrgContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { formatDateTime } from "@/lib/format";
+import { formatFechaHora } from "@/lib/locale";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ContactForm } from "../contact-form";
@@ -141,7 +141,7 @@ export default async function ContactoDetallePage({
                   >
                     <p className="font-medium">{appt.title}</p>
                     <p className="text-xs text-muted-foreground">
-                      {formatDateTime(appt.starts_at)}
+                      {formatFechaHora(appt.starts_at, session.org.region)}
                     </p>
                   </div>
                 ))

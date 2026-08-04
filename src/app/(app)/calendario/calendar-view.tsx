@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
-import { TIMEZONE } from "@/lib/format";
+import { hoyISO, type ConfigRegional } from "@/lib/locale";
 import { cn } from "@/lib/utils";
 
 export interface Cita {
@@ -30,42 +30,44 @@ const estadoVariants: Record<string, BadgeVariant> = {
   no_asistio: "warning",
 };
 
-/** La semana chilena parte en lunes */
+/**
+ * La semana parte en lunes, como en todos los países latinos y España. Una
+ * subcuenta de Estados Unidos esperaría el domingo primero: eso no es formato
+ * sino armado de la grilla, y queda pendiente para cuando exista ese cliente.
+ */
 const ENCABEZADOS = ["L", "M", "M", "J", "V", "S", "D"];
-
-/** "aaaa-mm-dd" del instante, en hora de Chile */
-const claveDia = new Intl.DateTimeFormat("en-CA", {
-  timeZone: TIMEZONE,
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-});
-
-/** HH:MM en 24 horas; h23 evita el "24:00" de medianoche */
-const hora = new Intl.DateTimeFormat("es-CL", {
-  timeZone: TIMEZONE,
-  hour: "2-digit",
-  minute: "2-digit",
-  hourCycle: "h23",
-});
-
-const diaLargo = new Intl.DateTimeFormat("es-CL", {
-  timeZone: "UTC",
-  weekday: "long",
-  day: "numeric",
-  month: "long",
-});
 
 const MAX_CHIPS = 3;
 
-export function CalendarView({ citas, mes }: { citas: Cita[]; mes: string }) {
+/**
+ * La región llega como prop desde el Server Component: la zona horaria de la
+ * subcuenta no se puede leer desde el navegador, y usar la del dispositivo
+ * mostraría la cita de las 15:00 a las 12:00 para quien viaja o tiene mal
+ * configurado el reloj.
+ */
+export function CalendarView({
+  citas,
+  mes,
+  region,
+}: {
+  citas: Cita[];
+  mes: string;
+  region: ConfigRegional;
+}) {
   const [seleccionado, setSeleccionado] = useState<string | null>(null);
 
   const [anio, numeroMes] = mes.split("-").map(Number);
   const indiceMes = numeroMes - 1;
 
-  // Las citas se agrupan por su día en Chile, no por el día UTC del timestamp.
+  // Las citas se agrupan por su día en la zona de la subcuenta, no por el día
+  // UTC del timestamp ni por el del navegador.
   const porDia = useMemo(() => {
+    const claveDia = new Intl.DateTimeFormat("en-CA", {
+      timeZone: region.timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
     const mapa = new Map<string, Cita[]>();
     for (const cita of citas) {
       const clave = claveDia.format(new Date(cita.starts_at));
@@ -77,9 +79,36 @@ export function CalendarView({ citas, mes }: { citas: Cita[]; mes: string }) {
       lista.sort((a, b) => a.starts_at.localeCompare(b.starts_at));
     }
     return mapa;
-  }, [citas]);
+  }, [citas, region.timezone]);
 
-  const hoy = claveDia.format(new Date());
+  /** HH:MM en 24 horas; h23 evita el "24:00" de medianoche */
+  const hora = useMemo(
+    () =>
+      new Intl.DateTimeFormat(region.locale, {
+        timeZone: region.timezone,
+        hour: "2-digit",
+        minute: "2-digit",
+        hourCycle: "h23",
+      }),
+    [region.locale, region.timezone]
+  );
+
+  // El día seleccionado ya es una fecha de calendario ("aaaa-mm-dd"), no un
+  // instante: se arma al mediodía UTC y se rotula en UTC para que ninguna
+  // conversión de zona lo corra un día.
+  const diaLargo = useMemo(
+    () =>
+      new Intl.DateTimeFormat(region.locale, {
+        timeZone: "UTC",
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+      }),
+    [region.locale]
+  );
+
+  // "Hoy" es el día del negocio, no el del dispositivo de quien mira.
+  const hoy = hoyISO(region);
 
   // Día 0 del mes siguiente = último día de este mes
   const diasEnMes = new Date(Date.UTC(anio, indiceMes + 1, 0)).getUTCDate();

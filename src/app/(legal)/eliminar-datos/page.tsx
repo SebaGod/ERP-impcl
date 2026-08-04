@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { brand } from "@/config/brand";
 import { createClient } from "@/lib/supabase/server";
-import { formatDateTime } from "@/lib/format";
+import { formatFechaHora } from "@/lib/locale";
 
 export const metadata: Metadata = {
   title: "Eliminación de datos",
@@ -44,10 +44,13 @@ async function EstadoSolicitud({ codigo }: { codigo: string }) {
           <p className="mt-1 text-lg font-semibold">
             {ESTADOS[solicitud.status] ?? solicitud.status}
           </p>
+          {/* Página pública y sin sesión: quien llega desde Facebook no tiene
+              subcuenta que consultar, así que las fechas van con el default
+              regional de la plataforma. */}
           <p className="mt-1 text-sm text-muted-foreground">
-            Recibida el {formatDateTime(solicitud.created_at)}
+            Recibida el {formatFechaHora(solicitud.created_at)}
             {solicitud.completed_at
-              ? ` · Completada el ${formatDateTime(solicitud.completed_at)}`
+              ? ` · Completada el ${formatFechaHora(solicitud.completed_at)}`
               : " · La procesamos dentro de 30 días y te confirmamos por correo."}
           </p>
         </>

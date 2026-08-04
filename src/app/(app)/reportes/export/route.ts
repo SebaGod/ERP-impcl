@@ -1,6 +1,6 @@
 import { requireAdminContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { formatDate } from "@/lib/format";
+import { formatFecha } from "@/lib/locale";
 import { resolvePeriod } from "../period";
 
 /** Escapa un campo CSV (separador ; estilo Excel es-CL) */
@@ -23,7 +23,10 @@ export async function GET(request: Request) {
   const supabase = await createClient();
   const { searchParams } = new URL(request.url);
   const tipo = searchParams.get("tipo") === "movimientos" ? "movimientos" : "ventas";
-  const period = resolvePeriod(searchParams.get("periodo") ?? undefined);
+  // El archivo lo lee el cliente: el periodo se corta y las fechas se
+  // escriben en SU zona horaria, no en la nuestra.
+  const region = session.org.region;
+  const period = resolvePeriod(searchParams.get("periodo") ?? undefined, region);
 
   let csv: string;
 
@@ -32,6 +35,8 @@ export async function GET(request: Request) {
       .from("transactions")
       .select("txn_date, type, amount, description, finance_categories (name)")
       .eq("org_id", session.org.id)
+      // txn_date es una columna `date`: se compara con el día tal cual,
+      // sin zona horaria de por medio.
       .gte("txn_date", period.from)
       .lt("txn_date", period.toExclusive)
       .order("txn_date");
@@ -43,7 +48,7 @@ export async function GET(request: Request) {
           name: string;
         } | null;
         return [
-          formatDate(t.txn_date),
+          formatFecha(t.txn_date, region),
           t.type === "ingreso" ? "Ingreso" : "Egreso",
           category?.name ?? "",
           t.description ?? "",
@@ -58,8 +63,11 @@ export async function GET(request: Request) {
         "code, title, amount_net, created_at, clients:contacts (name), work_order_stages (name)"
       )
       .eq("org_id", session.org.id)
-      .gte("created_at", period.from)
-      .lt("created_at", period.toExclusive)
+      // created_at es `timestamptz`: comparado con "aaaa-mm-dd" a secas,
+      // Postgres lo lee en la zona del servidor y el mes arrancaría a las
+      // 20:00 del día anterior en Chile. Van los instantes del cliente.
+      .gte("created_at", period.fromInstant)
+      .lt("created_at", period.toInstantExclusive)
       .order("created_at");
 
     csv = toCsv(
@@ -73,7 +81,7 @@ export async function GET(request: Request) {
           w.title,
           stage?.name ?? "",
           w.amount_net,
-          formatDate(w.created_at),
+          formatFecha(w.created_at, region),
         ];
       })
     );

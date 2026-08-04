@@ -3,7 +3,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { requireAdminContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { formatCLP } from "@/lib/format";
+import { formatMonto } from "@/lib/locale";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { RecurringForm } from "./recurring-form";
 import { RecurringRowControls, GenerateMonthButton } from "./recurring-controls";
@@ -13,6 +13,8 @@ export const metadata: Metadata = { title: "Gastos recurrentes" };
 export default async function RecurrentesPage() {
   const session = await requireAdminContext();
   const supabase = await createClient();
+  // Costos del cliente: van en la moneda en que él vende.
+  const region = session.org.region;
 
   const [{ data: expenses }, { data: categories }] = await Promise.all([
     supabase
@@ -50,7 +52,7 @@ export default async function RecurrentesPage() {
           <div>
             <CardTitle>Tus gastos fijos</CardTitle>
             <CardDescription>
-              Total mensual activo: {formatCLP(activeTotal)}
+              Total mensual activo: {formatMonto(activeTotal, region)}
             </CardDescription>
           </div>
           {(expenses ?? []).length > 0 && <GenerateMonthButton />}
@@ -74,7 +76,7 @@ export default async function RecurrentesPage() {
                   <div className="min-w-0">
                     <p className="text-sm font-medium">{expense.description}</p>
                     <p className="text-xs text-muted-foreground">
-                      {formatCLP(expense.amount)} · día {expense.day_of_month}
+                      {formatMonto(expense.amount, region)} · día {expense.day_of_month}
                       {category && ` · ${category.name}`}
                     </p>
                   </div>

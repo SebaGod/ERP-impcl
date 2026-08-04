@@ -211,6 +211,7 @@ export default async function OportunidadesPage({
         etiquetas={etiquetas}
         filtros={filtrosUrl}
         filtrosBoard={filtrosBoard}
+        region={session.org.region}
         claveDatos={claveDatos}
       />
     </div>

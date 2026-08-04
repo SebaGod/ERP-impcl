@@ -16,7 +16,15 @@ export const statusVariants: Record<
   pausada: "outline",
 };
 
-/** Fila de la tabla de subcuentas (RPC agency_subaccounts) */
+/**
+ * Fila de la tabla de subcuentas (RPC agency_subaccounts).
+ *
+ * Conviven dos monedas y no son la misma: `monthly_fee` está en la moneda
+ * de la AGENCIA —es lo que ella factura— y `pipeline_value` en la de la
+ * SUBCUENTA, que es en la que ese cliente vende. Por eso la fila trae su
+ * identidad regional: sin ella, sumar el pipeline de varios clientes daría
+ * un número que no significa nada.
+ */
 export interface SubaccountRow {
   id: string;
   name: string;
@@ -31,6 +39,10 @@ export interface SubaccountRow {
   open_opportunities: number;
   pipeline_value: number;
   open_conversations: number;
+  /** Moneda en la que vende esta subcuenta (no en la que le cobra la agencia) */
+  currency: string | null;
+  timezone: string | null;
+  locale: string | null;
 }
 
 /** Métricas agregadas de la agencia (RPC agency_overview) */
@@ -39,9 +51,16 @@ export interface AgencyOverview {
   active: number;
   trial: number;
   paused: number;
+  /** Cobro mensual de la cartera, en la moneda de la AGENCIA */
   mrr: number;
   contacts: number;
   open_opportunities: number;
+  /**
+   * OJO: un único número sin moneda, sumado sobre subcuentas que pueden
+   * vender en monedas distintas. Solo es cierto mientras toda la cartera
+   * comparta moneda. El tablero ya no lo usa: arma el KPI de pipeline con
+   * las filas de `agency_subaccounts`, que sí traen la moneda de cada una.
+   */
   pipeline_value: number;
   open_conversations: number;
   snapshots: number;

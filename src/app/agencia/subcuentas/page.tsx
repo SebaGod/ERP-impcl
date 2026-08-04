@@ -92,7 +92,13 @@ export default async function SubcuentasPage() {
           }
         />
       ) : (
-        <SubaccountsTable rows={rows} referencia={referencia} />
+        // La región no se puede leer desde el cliente: la moneda y la zona
+        // horaria de la agencia bajan como prop desde acá.
+        <SubaccountsTable
+          rows={rows}
+          referencia={referencia}
+          regionAgencia={session.agency.region}
+        />
       )}
     </div>
   );

@@ -35,7 +35,14 @@ import {
 } from "@/components/ui/card";
 import { DonutChart, LineChart, chartPalette } from "@/components/charts";
 import { QueryError } from "@/components/query-error";
-import { formatCLP } from "@/lib/format";
+import {
+  agruparPorMoneda,
+  formatMonto,
+  hayVariasMonedas,
+  regionDe,
+  type ConfigRegional,
+  type MontoAgrupado,
+} from "@/lib/locale";
 import { cn } from "@/lib/utils";
 import {
   statusLabels,
@@ -154,21 +161,41 @@ function listar(nombres: string[], max = 3): string {
 }
 
 /**
+ * El símbolo de la moneda, suelto.
+ *
+ * Intl no sabe abreviar a "12,5M" conservando la forma del número, así que
+ * el símbolo se saca aparte y se pega a la cifra ya recortada. Sin esto el
+ * donut escribiría "$" en la cara de una agencia que cobra en soles.
+ */
+function simboloMoneda(config: ConfigRegional): string {
+  const simbolo = new Intl.NumberFormat(config.locale, {
+    style: "currency",
+    currency: config.currency,
+    maximumFractionDigits: 0,
+  })
+    .formatToParts(0)
+    .find((parte) => parte.type === "currency");
+  return simbolo?.value ?? "";
+}
+
+/**
  * El centro del donut mide unos 96 px: un "$12.450.000" completo se corta.
  * Solo ahí se abrevia; el monto exacto se imprime en el encabezado de la
  * tarjeta, así que nadie tiene que adivinar el número.
  */
-function mrrCompacto(monto: number): string {
+function mrrCompacto(monto: number, config: ConfigRegional): string {
   if (monto >= 1_000_000) {
     const millones = monto / 1_000_000;
-    return `$${millones.toLocaleString("es-CL", {
+    return `${simboloMoneda(config)}${millones.toLocaleString(config.locale, {
       maximumFractionDigits: millones >= 10 ? 0 : 1,
     })}M`;
   }
   if (monto >= 100_000) {
-    return `$${Math.round(monto / 1000).toLocaleString("es-CL")}k`;
+    return `${simboloMoneda(config)}${Math.round(monto / 1000).toLocaleString(
+      config.locale
+    )}k`;
   }
-  return formatCLP(monto);
+  return formatMonto(monto, config);
 }
 
 type Severidad = "error" | "aviso" | "info";
@@ -426,7 +453,19 @@ export default async function AgenciaPage() {
   const crecimiento = (crecimientoResult.data as CrecimientoMes[] | null) ?? [];
   const canales = (canalesResult.data as CanalAgencia[] | null) ?? [];
 
+  // El MRR lo factura la agencia: va en SU moneda, no en la de los clientes.
+  const region = agency.region;
   const mrr = aNumero(overview.mrr);
+
+  // El pipeline es plata de los CLIENTES, cada uno en su moneda. Se agrupa
+  // antes de sumar en vez de leer overview.pipeline_value, que es un único
+  // número sin moneda: con una cartera mixta sumaría pesos con soles.
+  const pipeline = agruparPorMoneda(
+    subcuentas,
+    (s) => aNumero(s.pipeline_value),
+    regionDe
+  );
+  const carteraMixta = hayVariasMonedas(pipeline);
 
   // Una consulta caída no puede leerse como cartera vacía: son situaciones
   // opuestas y la salida es distinta. Si falla justo la de subcuentas, el
@@ -452,7 +491,7 @@ export default async function AgenciaPage() {
               ? "No pudimos leer tu cartera"
               : subcuentas.length === 0
                 ? "Aún no tienes subcuentas"
-                : `${plural(subcuentas.length, "cliente", "clientes")} en cartera · ${formatCLP(mrr)} al mes`}
+                : `${plural(subcuentas.length, "cliente", "clientes")} en cartera · ${formatMonto(mrr, region)} al mes`}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -496,7 +535,7 @@ export default async function AgenciaPage() {
             <Kpi
               icon={Wallet}
               label="MRR"
-              value={formatCLP(mrr)}
+              value={formatMonto(mrr, region)}
               hint="Activas y en prueba"
             />
             <Kpi
@@ -538,8 +577,12 @@ export default async function AgenciaPage() {
             <Kpi
               icon={TrendingUp}
               label="Pipeline"
-              value={formatCLP(aNumero(overview.pipeline_value))}
-              hint="Suma de lo abierto"
+              value={<PorMoneda grupos={pipeline} />}
+              hint={
+                carteraMixta
+                  ? "Lo abierto, sumado dentro de cada moneda"
+                  : "Suma de lo abierto"
+              }
             />
             <Kpi
               icon={MessagesSquare}
@@ -553,20 +596,50 @@ export default async function AgenciaPage() {
             <div className="xl:col-span-2">
               <Atencion alertas={construirAlertas(subcuentas, canales)} />
             </div>
-            <Movimiento crecimiento={crecimiento} />
+            <Movimiento
+              crecimiento={crecimiento}
+              monedaCartera={carteraMixta ? null : (pipeline[0]?.config ?? null)}
+            />
           </div>
 
           <div className="grid gap-4 xl:grid-cols-3">
             <div className="xl:col-span-2">
               <Crecimiento crecimiento={crecimiento} />
             </div>
-            <ComposicionMrr subcuentas={subcuentas} />
+            <ComposicionMrr subcuentas={subcuentas} region={region} />
           </div>
 
-          <TopSubcuentas subcuentas={subcuentas} />
+          <TopSubcuentas subcuentas={subcuentas} mixta={carteraMixta} />
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * Subtotales de dinero que no se pueden sumar entre sí.
+ *
+ * Con una sola moneda —el caso de hoy— sale un monto y la tarjeta se ve
+ * exactamente igual que siempre. Con varias sale uno por moneda en líneas
+ * separadas: nunca unidos por un "+", que volvería a sugerir un total que
+ * no existe mientras el sistema no tenga tipo de cambio.
+ */
+function PorMoneda({ grupos }: { grupos: MontoAgrupado[] }) {
+  // Sin filas no hay moneda que respetar: el cero se escribe con el default
+  // de la plataforma. Es una guarda, no un caso real —esta tarjeta solo se
+  // pinta cuando la cartera tiene al menos una subcuenta.
+  if (grupos.length === 0) return <>{formatMonto(0)}</>;
+  if (grupos.length === 1) {
+    return <>{formatMonto(grupos[0].total, grupos[0].config)}</>;
+  }
+  return (
+    <span className="flex flex-col gap-0.5 text-lg leading-tight">
+      {grupos.map((grupo) => (
+        <span key={grupo.currency} className="truncate">
+          {formatMonto(grupo.total, grupo.config)}
+        </span>
+      ))}
+    </span>
   );
 }
 
@@ -578,7 +651,8 @@ function Kpi({
 }: {
   icon: LucideIcon;
   label: string;
-  value: string;
+  /** ReactNode y no string: un KPI en varias monedas ocupa varias líneas */
+  value: ReactNode;
   hint: ReactNode;
 }) {
   return (
@@ -721,7 +795,22 @@ function Crecimiento({ crecimiento }: { crecimiento: CrecimientoMes[] }) {
   );
 }
 
-function Movimiento({ crecimiento }: { crecimiento: CrecimientoMes[] }) {
+function Movimiento({
+  crecimiento,
+  monedaCartera,
+}: {
+  crecimiento: CrecimientoMes[];
+  /**
+   * La moneda en que vende toda la cartera, o null si vende en varias.
+   *
+   * `agency_growth` devuelve el monto de las oportunidades nuevas como un
+   * solo número, sumado sobre todas las subcuentas y sin decir en qué
+   * moneda. Con una cartera de una sola moneda ese número es cierto; con
+   * dos es la suma de pesos con soles, así que la fila se calla en vez de
+   * mentir con la seguridad de las demás.
+   */
+  monedaCartera: ConfigRegional | null;
+}) {
   const actual = crecimiento.at(-1);
   const previo = crecimiento.at(-2);
 
@@ -755,12 +844,14 @@ function Movimiento({ crecimiento }: { crecimiento: CrecimientoMes[] }) {
                 actual={aNumero(actual.oportunidades_nuevas)}
                 previo={aNumero(previo.oportunidades_nuevas)}
               />
-              <FilaMovimiento
-                label="Monto de oportunidades"
-                actual={aNumero(actual.valor_nuevo)}
-                previo={aNumero(previo.valor_nuevo)}
-                formato={formatCLP}
-              />
+              {monedaCartera && (
+                <FilaMovimiento
+                  label="Monto de oportunidades"
+                  actual={aNumero(actual.valor_nuevo)}
+                  previo={aNumero(previo.valor_nuevo)}
+                  formato={(valor) => formatMonto(valor, monedaCartera)}
+                />
+              )}
               <FilaMovimiento
                 label="Subcuentas nuevas"
                 actual={aNumero(actual.nuevas_subcuentas)}
@@ -770,6 +861,8 @@ function Movimiento({ crecimiento }: { crecimiento: CrecimientoMes[] }) {
             <p className="mt-3 border-t border-border pt-3 text-xs text-muted-foreground">
               {nombreMes(actual.mes)} va a medio andar: se compara contra un mes
               ya cerrado.
+              {!monedaCartera &&
+                " El monto de las oportunidades nuevas no aparece porque tus clientes venden en monedas distintas y llega como un solo total sin moneda."}
             </p>
           </>
         )}
@@ -840,7 +933,14 @@ function Variacion({ actual, previo }: { actual: number; previo: number }) {
   );
 }
 
-function ComposicionMrr({ subcuentas }: { subcuentas: SubaccountRow[] }) {
+function ComposicionMrr({
+  subcuentas,
+  region,
+}: {
+  subcuentas: SubaccountRow[];
+  /** Moneda de la AGENCIA: el cobro mensual es lo que ELLA factura */
+  region: ConfigRegional;
+}) {
   // El MRR del encabezado excluye las pausadas; el donut usa el mismo
   // criterio para que los dos números cuadren.
   const facturables = subcuentas.filter(
@@ -860,7 +960,7 @@ function ComposicionMrr({ subcuentas }: { subcuentas: SubaccountRow[] }) {
         <CardDescription>
           {segmentos.length === 0
             ? "De dónde sale el ingreso mensual recurrente"
-            : `${formatCLP(total)} al mes, repartidos ${porPlan ? "por plan" : "por subcuenta"}`}
+            : `${formatMonto(total, region)} al mes, repartidos ${porPlan ? "por plan" : "por subcuenta"}`}
         </CardDescription>
       </CardHeader>
       <CardContent className="p-5 pt-0">
@@ -886,7 +986,7 @@ function ComposicionMrr({ subcuentas }: { subcuentas: SubaccountRow[] }) {
                 value: s.value,
                 color: chartPalette[i % chartPalette.length],
               }))}
-              centerLabel={mrrCompacto(total)}
+              centerLabel={mrrCompacto(total, region)}
             />
             {pausadasConCobro > 0 && (
               <p className="mt-4 border-t border-border pt-3 text-xs text-muted-foreground">
@@ -905,7 +1005,14 @@ function ComposicionMrr({ subcuentas }: { subcuentas: SubaccountRow[] }) {
   );
 }
 
-function TopSubcuentas({ subcuentas }: { subcuentas: SubaccountRow[] }) {
+function TopSubcuentas({
+  subcuentas,
+  mixta,
+}: {
+  subcuentas: SubaccountRow[];
+  /** true si la cartera vende en más de una moneda */
+  mixta: boolean;
+}) {
   const top = [...subcuentas]
     .sort((a, b) => aNumero(b.pipeline_value) - aNumero(a.pipeline_value))
     .slice(0, 5);
@@ -917,7 +1024,9 @@ function TopSubcuentas({ subcuentas }: { subcuentas: SubaccountRow[] }) {
         <div className="min-w-0">
           <CardTitle className="text-base">Top subcuentas por pipeline</CardTitle>
           <CardDescription>
-            Las cinco con más plata en oportunidades abiertas.
+            {mixta
+              ? "Las cinco con más plata en oportunidades abiertas. Tus clientes venden en monedas distintas: el orden compara cifras que no son comparables entre sí, así que léelo como una referencia y no como un ranking."
+              : "Las cinco con más plata en oportunidades abiertas."}
           </CardDescription>
         </div>
         <Link
@@ -956,18 +1065,23 @@ function TopSubcuentas({ subcuentas }: { subcuentas: SubaccountRow[] }) {
                           {statusLabels[s.status]}
                         </Badge>
                       </span>
-                      <span className="mt-1.5 block h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                        <span
-                          className="block h-full rounded-full bg-primary"
-                          style={{
-                            width: `${valor > 0 ? Math.max(2, Math.round((valor / max) * 100)) : 0}%`,
-                          }}
-                        />
-                      </span>
+                      {/* La barra mide un monto contra otro: dibujarla entre
+                          monedas distintas sería una comparación visual que
+                          el número de al lado ya no sostiene */}
+                      {!mixta && (
+                        <span className="mt-1.5 block h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                          <span
+                            className="block h-full rounded-full bg-primary"
+                            style={{
+                              width: `${valor > 0 ? Math.max(2, Math.round((valor / max) * 100)) : 0}%`,
+                            }}
+                          />
+                        </span>
+                      )}
                     </span>
                     <span className="shrink-0 text-right">
                       <span className="block text-sm font-semibold tabular-nums">
-                        {formatCLP(valor)}
+                        {formatMonto(valor, regionDe(s))}
                       </span>
                       <span className="block text-xs tabular-nums text-muted-foreground">
                         {plural(

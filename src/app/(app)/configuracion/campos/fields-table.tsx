@@ -29,7 +29,7 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { formatDate } from "@/lib/format";
+import { formatFecha, type ConfigRegional } from "@/lib/locale";
 import {
   claveDesdeEtiqueta,
   entityLabels,
@@ -70,7 +70,18 @@ function claveDeFusion(campo: Pick<FieldDef, "entity" | "key" | "label">): strin
   return envolver(tagDeCampo(campo).key);
 }
 
-export function FieldsTable({ campos }: { campos: FieldDefRow[] }) {
+/**
+ * La región llega como prop: un componente de cliente no puede leer la
+ * configuración de la subcuenta, y la fecha de creación de un campo debe
+ * escribirse con el calendario de quien administra el CRM.
+ */
+export function FieldsTable({
+  campos,
+  region,
+}: {
+  campos: FieldDefRow[];
+  region: ConfigRegional;
+}) {
   const [busqueda, setBusqueda] = useState("");
   const [tipoFiltro, setTipoFiltro] = useState<FieldType | "todos">("todos");
   const [carpetaFiltro, setCarpetaFiltro] = useState("todas");
@@ -85,8 +96,10 @@ export function FieldsTable({ campos }: { campos: FieldDefRow[] }) {
     for (const campo of campos) {
       if (campo.folder) vistas.add(campo.folder);
     }
-    return [...vistas].sort((a, b) => a.localeCompare(b, "es"));
-  }, [campos]);
+    // El orden alfabético depende del idioma: quien nombra sus carpetas espera
+    // verlas ordenadas como en su país, no como en el nuestro.
+    return [...vistas].sort((a, b) => a.localeCompare(b, region.locale));
+  }, [campos, region]);
 
   /** Primero y último de cada ficha: gobiernan los botones de orden. */
   const extremos = useMemo(() => {
@@ -238,6 +251,7 @@ export function FieldsTable({ campos }: { campos: FieldDefRow[] }) {
                   key={campo.id}
                   campo={campo}
                   carpetas={carpetas}
+                  region={region}
                   abierto={abierto}
                   esPrimero={orden?.primero ?? true}
                   esUltimo={orden?.ultimo ?? true}
@@ -259,6 +273,7 @@ export function FieldsTable({ campos }: { campos: FieldDefRow[] }) {
 interface FilaCampoProps {
   campo: FieldDefRow;
   carpetas: string[];
+  region: ConfigRegional;
   abierto: boolean;
   esPrimero: boolean;
   esUltimo: boolean;
@@ -269,6 +284,7 @@ interface FilaCampoProps {
 function FilaCampo({
   campo,
   carpetas,
+  region,
   abierto,
   esPrimero,
   esUltimo,
@@ -347,7 +363,7 @@ function FilaCampo({
           </div>
         </td>
         <td className="px-3 py-2.5 align-top text-sm tabular-nums text-muted-foreground">
-          {formatDate(campo.created_at)}
+          {formatFecha(campo.created_at, region)}
         </td>
         <td className="px-3 py-2.5 align-top">
           <div className="flex items-center justify-end gap-0.5">

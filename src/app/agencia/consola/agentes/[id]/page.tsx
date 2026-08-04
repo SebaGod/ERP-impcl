@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, BookOpen, Bot, Activity } from "lucide-react";
 import { requireAgencyContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { formatDateTime } from "@/lib/format";
+import { formatFechaHora, regionDe } from "@/lib/locale";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { costoUsd, formatTokens, formatUsd, nombreModelo } from "@/lib/agent/pricing";
@@ -51,15 +51,25 @@ export default async function ConsolaAgenteDetallePage({
 
   const { data: orgsData } = await supabase
     .from("organizations")
-    .select("id, name")
+    .select("id, name, currency, timezone, locale")
     .eq("agency_id", session.agency.id)
     .order("name");
 
-  const subcuentas = (orgsData ?? []) as { id: string; name: string }[];
+  const subcuentas = (orgsData ?? []) as {
+    id: string;
+    name: string;
+    currency: string | null;
+    timezone: string | null;
+    locale: string | null;
+  }[];
   const subcuenta = subcuentas.find((o) => o.id === orgParam);
   // Un id de agente no dice a qué cliente pertenece: el org llega por query
   // y solo vale si es una subcuenta de esta agencia.
   if (!subcuenta) notFound();
+
+  // Es la ficha de UN cliente concreto: sus horas van en la zona en que ese
+  // cliente trabaja. Una corrida de las 22:00 en Lima no es de las 00:00.
+  const region = regionDe(subcuenta);
 
   const [{ data: agenteData }, { data: conocimientoData }, { data: corridasData }] =
     await Promise.all([
@@ -116,7 +126,7 @@ export default async function ConsolaAgenteDetallePage({
             </div>
             <p className="text-sm text-muted-foreground">
               {subcuenta.name} · {nombreModelo(agente.model)} · creado el{" "}
-              {formatDateTime(agente.created_at)}
+              {formatFechaHora(agente.created_at, region)}
             </p>
           </div>
         </div>
@@ -208,7 +218,7 @@ export default async function ConsolaAgenteDetallePage({
                     <li key={r.id} className="flex flex-col gap-1 py-2.5">
                       <div className="flex items-center justify-between gap-3">
                         <span className="text-xs text-muted-foreground">
-                          {formatDateTime(r.created_at)}
+                          {formatFechaHora(r.created_at, region)}
                         </span>
                         <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
                           {formatTokens(entrada + salida)} tok ·{" "}

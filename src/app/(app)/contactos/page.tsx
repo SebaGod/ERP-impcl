@@ -215,6 +215,7 @@ export default async function ContactosPage({
           tags={tags}
           campos={campos}
           origenes={origenes.map((o) => o.source)}
+          region={session.org.region}
           fallo={!resultado.ok}
         />
       )}
