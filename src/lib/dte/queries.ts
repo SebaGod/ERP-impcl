@@ -1,0 +1,157 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { CodigoDte, EstadoDte } from "./tipos";
+
+/**
+ * Consultas del registro tributario.
+ *
+ * Igual que el resto del sistema: todo paginado y contado en Postgres.
+ * Un cliente que emite treinta boletas al día junta diez mil al año, y
+ * PostgREST corta en 1.000 filas sin avisar.
+ */
+
+export interface FiltrosDte {
+  tipo?: CodigoDte | null;
+  estado?: EstadoDte | null;
+  q?: string | null;
+  desde?: string | null;
+  hasta?: string | null;
+}
+
+export interface FilaDte {
+  id: string;
+  tipo: CodigoDte;
+  folio: number | null;
+  estado: EstadoDte;
+  fecha_emision: string;
+  contact_id: string | null;
+  receptor_razon_social: string | null;
+  receptor_rut: string | null;
+  neto: number;
+  exento: number;
+  iva: number;
+  total: number;
+  ref_folio: number | null;
+}
+
+export interface PaginaDte {
+  documentos: FilaDte[];
+  /** Total de la consulta filtrada, no de la página */
+  total: number;
+}
+
+export async function paginaDte(
+  supabase: SupabaseClient,
+  orgId: string,
+  filtros: FiltrosDte = {},
+  limite = 50,
+  offset = 0
+): Promise<PaginaDte> {
+  const { data, error } = await supabase.rpc("dte_page", {
+    p_org: orgId,
+    p_tipo: filtros.tipo ?? null,
+    p_estado: filtros.estado ?? null,
+    p_q: filtros.q?.trim() || null,
+    p_desde: filtros.desde ?? null,
+    p_hasta: filtros.hasta ?? null,
+    p_limit: limite,
+    p_offset: offset,
+  });
+  if (error) throw new Error(`No se pudo leer los documentos: ${error.message}`);
+
+  const filas = (data as (FilaDte & { total_filas: number })[] | null) ?? [];
+  return {
+    documentos: filas.map((f) => ({
+      id: f.id,
+      tipo: f.tipo,
+      folio: f.folio,
+      estado: f.estado,
+      fecha_emision: f.fecha_emision,
+      contact_id: f.contact_id,
+      receptor_razon_social: f.receptor_razon_social,
+      receptor_rut: f.receptor_rut,
+      neto: Number(f.neto),
+      exento: Number(f.exento),
+      iva: Number(f.iva),
+      total: Number(f.total),
+      ref_folio: f.ref_folio,
+    })),
+    total: filas.length > 0 ? Number(filas[0]!.total_filas) : 0,
+  };
+}
+
+export interface ResumenTipo {
+  tipo: CodigoDte;
+  documentos: number;
+  neto: number;
+  exento: number;
+  iva: number;
+  total: number;
+}
+
+/**
+ * El libro de ventas de un periodo, por tipo de documento.
+ *
+ * Es lo que el contador pide todos los meses: cuánto se vendió afecto,
+ * cuánto exento y cuánto IVA débito hay que enterar.
+ *
+ * Las notas de crédito NO se restan acá: vienen como su propio tipo (61)
+ * y con signo positivo, tal como se emitieron. Restarlas en silencio
+ * escondería cuánto se anuló, que es justo lo que el contador mira.
+ */
+export async function resumenPeriodo(
+  supabase: SupabaseClient,
+  orgId: string,
+  desde: string,
+  hasta: string
+): Promise<ResumenTipo[]> {
+  const { data, error } = await supabase.rpc("dte_resumen_periodo", {
+    p_org: orgId,
+    p_desde: desde,
+    p_hasta: hasta,
+  });
+  if (error) throw new Error(`No se pudo armar el libro: ${error.message}`);
+
+  return ((data as ResumenTipo[] | null) ?? []).map((r) => ({
+    tipo: r.tipo,
+    documentos: Number(r.documentos),
+    neto: Number(r.neto),
+    exento: Number(r.exento),
+    iva: Number(r.iva),
+    total: Number(r.total),
+  }));
+}
+
+/**
+ * Ventas menos lo anulado.
+ *
+ * Los tipos 61 (nota de crédito) restan; el resto suma. Es la cuenta que
+ * termina en la declaración, y por eso se calcula acá una sola vez en vez
+ * de que cada pantalla la rehaga a su manera.
+ */
+export interface TotalesLibro {
+  neto: number;
+  exento: number;
+  iva: number;
+  total: number;
+  documentos: number;
+  /** Lo anulado en el periodo, para poder mostrarlo aparte */
+  anulado: number;
+}
+
+export function totalesLibro(resumen: ResumenTipo[]): TotalesLibro {
+  return resumen.reduce<TotalesLibro>(
+    (acc, r) => {
+      // 61 nota de crédito resta, 56 nota de débito suma
+      const signo = r.tipo === 61 ? -1 : 1;
+      return {
+        neto: acc.neto + signo * r.neto,
+        exento: acc.exento + signo * r.exento,
+        iva: acc.iva + signo * r.iva,
+        total: acc.total + signo * r.total,
+        documentos: acc.documentos + r.documentos,
+        anulado: acc.anulado + (r.tipo === 61 ? r.total : 0),
+      };
+    },
+    { neto: 0, exento: 0, iva: 0, total: 0, documentos: 0, anulado: 0 }
+  );
+}

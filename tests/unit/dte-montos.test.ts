@@ -8,6 +8,7 @@ import {
   type LineaDte,
 } from "@/lib/dte/montos";
 import { TIPOS_DTE } from "@/lib/dte/tipos";
+import { totalesLibro } from "@/lib/dte/queries";
 
 /**
  * El cálculo tributario, probado en serio.
@@ -240,5 +241,57 @@ describe("catálogo de tipos", () => {
       const esBoleta = tipo.codigo === 39 || tipo.codigo === 41;
       expect(tipo.exigeReceptor, tipo.nombre).toBe(!esBoleta);
     }
+  });
+});
+
+describe("totales del libro de ventas", () => {
+  it("las notas de crédito restan del total declarado", () => {
+    // Es la cuenta que termina en la declaración: si una factura se anuló,
+    // ese IVA no se entera.
+    const totales = totalesLibro([
+      { tipo: 33, documentos: 10, neto: 1_000_000, exento: 0, iva: 190_000, total: 1_190_000 },
+      { tipo: 61, documentos: 1, neto: 100_000, exento: 0, iva: 19_000, total: 119_000 },
+    ]);
+
+    expect(totales.neto).toBe(900_000);
+    expect(totales.iva).toBe(171_000);
+    expect(totales.total).toBe(1_071_000);
+  });
+
+  it("muestra aparte cuánto se anuló, en vez de esconderlo en la resta", () => {
+    // El contador necesita ver el monto anulado, no solo el neto final
+    const totales = totalesLibro([
+      { tipo: 33, documentos: 5, neto: 500_000, exento: 0, iva: 95_000, total: 595_000 },
+      { tipo: 61, documentos: 2, neto: 50_000, exento: 0, iva: 9_500, total: 59_500 },
+    ]);
+    expect(totales.anulado).toBe(59_500);
+    expect(totales.documentos).toBe(7);
+  });
+
+  it("la nota de débito suma, no resta", () => {
+    const totales = totalesLibro([
+      { tipo: 33, documentos: 1, neto: 100_000, exento: 0, iva: 19_000, total: 119_000 },
+      { tipo: 56, documentos: 1, neto: 10_000, exento: 0, iva: 1_900, total: 11_900 },
+    ]);
+    expect(totales.neto).toBe(110_000);
+  });
+
+  it("un periodo sin documentos da cero, no NaN", () => {
+    const totales = totalesLibro([]);
+    expect(totales).toEqual({
+      neto: 0, exento: 0, iva: 0, total: 0, documentos: 0, anulado: 0,
+    });
+  });
+
+  it("suma boletas, facturas y exentas por separado sin mezclar", () => {
+    const totales = totalesLibro([
+      { tipo: 39, documentos: 20, neto: 168_067, exento: 0, iva: 31_933, total: 200_000 },
+      { tipo: 33, documentos: 3, neto: 300_000, exento: 0, iva: 57_000, total: 357_000 },
+      { tipo: 34, documentos: 1, neto: 0, exento: 50_000, iva: 0, total: 50_000 },
+    ]);
+    expect(totales.neto).toBe(468_067);
+    expect(totales.exento).toBe(50_000);
+    expect(totales.iva).toBe(88_933);
+    expect(totales.total).toBe(607_000);
   });
 });

@@ -2,13 +2,14 @@ import { tipoDte, type CodigoDte } from "./tipos";
 import { validateRut } from "@/lib/format";
 
 /**
- * Qué falta para poder emitir.
+ * Qué le va a faltar al documento cuando lo emita.
  *
- * El SII rechaza el documento completo si falta un dato obligatorio, y el
- * folio se pierde igual. Comprobar antes convierte un rechazo —que además
- * quema un folio— en una lista de campos que el usuario puede completar.
+ * La plataforma REGISTRA documentos; el cliente los emite en el portal
+ * del SII, con su contador o en otro sistema. Estas comprobaciones no
+ * bloquean el registro: avisan ANTES, para que no descubra allá que le
+ * falta el giro del cliente y pierda el folio.
  *
- * Las reglas de acá son las del SII, no criterios nuestros: qué exige una
+ * Las reglas son las del SII, no criterios nuestros: qué exige una
  * factura y qué no exige una boleta.
  */
 
@@ -217,6 +218,7 @@ export function faltantesReferencia(
 }
 
 export interface RevisionEmision {
+  /** Sin faltantes: el documento está completo para el SII */
   puedeEmitir: boolean;
   faltantes: FaltanteDte[];
 }

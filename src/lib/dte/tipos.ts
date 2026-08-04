@@ -143,11 +143,18 @@ export const MOTIVOS_NOTA_CREDITO = [
 export type MotivoNotaCredito = (typeof MOTIVOS_NOTA_CREDITO)[number]["codigo"];
 
 /**
- * Estado del documento ante el SII.
+ * Estado del documento.
  *
- * "emitido" y "aceptado" NO son lo mismo: entre uno y otro el SII puede
- * rechazarlo. Mostrar un documento como bueno apenas se envía sería
- * decirle al cliente que ya está, cuando todavía puede volver.
+ * La plataforma REGISTRA documentos que el cliente emite en otra parte
+ * (el portal del SII, su contador, otro sistema); no los emite ella. Por
+ * eso los tres estados que se usan a diario son borrador → emitido →
+ * anulado, y son los únicos que ofrece la interfaz.
+ *
+ * Los estados del SII (aceptado, con reparos, rechazado) quedan en el
+ * esquema para el día que se integre un proveedor de emisión. Mostrarlos
+ * hoy sería pedirle al usuario que copie a mano un dato que la
+ * plataforma no puede confirmar, y un estado que nadie mantiene miente
+ * más que uno que no existe.
  */
 export type EstadoDte =
   | "borrador"
@@ -163,13 +170,13 @@ export const ESTADOS_DTE: Record<
 > = {
   borrador: {
     label: "Borrador",
-    descripcion: "Todavía no se envía al SII. Se puede editar o eliminar.",
+    descripcion: "Todavía sin folio. Se puede editar o eliminar.",
     variant: "outline",
   },
   emitido: {
-    label: "Enviado al SII",
-    descripcion: "En revisión. El SII responde en minutos u horas.",
-    variant: "warning",
+    label: "Emitido",
+    descripcion: "Ya se emitió y tiene folio. Queda registrado y no se edita.",
+    variant: "success",
   },
   aceptado: {
     label: "Aceptado",
@@ -195,7 +202,14 @@ export const ESTADOS_DTE: Record<
   },
 };
 
-/** ¿El documento ya no se puede editar? Emitido al SII, no se toca. */
+/**
+ * Los estados que la interfaz ofrece mientras la plataforma solo registra.
+ *
+ * Los demás existen en el esquema para cuando haya emisión propia.
+ */
+export const ESTADOS_EN_USO: EstadoDte[] = ["borrador", "emitido", "anulado"];
+
+/** ¿El documento ya no se puede editar? Una vez emitido, no se toca. */
 export function esInmutable(estado: EstadoDte): boolean {
   return estado !== "borrador";
 }
