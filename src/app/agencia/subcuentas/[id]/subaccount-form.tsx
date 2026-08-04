@@ -7,7 +7,10 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { statusLabels, type SubaccountStatus } from "@/lib/agency/types";
+import type { ConfigRegional } from "@/lib/locale";
+import { CamposRegion } from "@/lib/region/campos";
 import { applySnapshot, updateSubaccount, type ActionState } from "../../actions";
+import { updateSubaccountRegion } from "./region-actions";
 
 const initialState: ActionState = { error: null };
 
@@ -26,7 +29,21 @@ interface SubaccountFormOrg {
 }
 
 /** Ficha comercial de una subcuenta: estado, plan, cobro y contacto */
-export function SubaccountForm({ org }: { org: SubaccountFormOrg }) {
+export function SubaccountForm({
+  org,
+  moneda,
+  cobroFormateado,
+}: {
+  org: SubaccountFormOrg;
+  /** Moneda con que se leen los montos de esta ficha */
+  moneda: string;
+  /**
+   * El cobro ya formateado en el servidor. Llega hecho porque estos tres
+   * campos son texto libre en la base: si alguno quedó inválido, `Intl`
+   * lanza, y no vale la pena que eso pase dentro del navegador.
+   */
+  cobroFormateado: string | null;
+}) {
   const [state, formAction, pending] = useActionState(
     updateSubaccount,
     initialState
@@ -78,7 +95,9 @@ export function SubaccountForm({ org }: { org: SubaccountFormOrg }) {
             defaultValue={org.monthly_fee}
           />
           <p className="text-xs text-muted-foreground">
-            Monto en pesos que le facturas a este cliente cada mes.
+            Lo que le facturas a este cliente cada mes. Se lee en {moneda}, la
+            moneda de la subcuenta.
+            {cobroFormateado && ` Hoy: ${cobroFormateado}.`}
           </p>
         </div>
 
@@ -131,6 +150,60 @@ export function SubaccountForm({ org }: { org: SubaccountFormOrg }) {
       <div className="flex items-center gap-3">
         <Button type="submit" disabled={pending}>
           {pending ? "Guardando…" : "Guardar cambios"}
+        </Button>
+        {saved && !pending && !state.error && (
+          <span className="text-sm text-muted-foreground">Cambios guardados</span>
+        )}
+      </div>
+    </form>
+  );
+}
+
+/**
+ * Región de la subcuenta editada desde la agencia.
+ *
+ * La agencia la necesita porque el cliente no siempre entra a su propia
+ * configuración: la cuenta se deja lista antes de entregarla, y una
+ * subcuenta peruana entregada con horario de Santiago agenda mal desde
+ * la primera cita.
+ */
+export function RegionSubcuentaForm({
+  orgId,
+  region,
+  instanteEjemplo,
+}: {
+  orgId: string;
+  region: ConfigRegional;
+  instanteEjemplo: string;
+}) {
+  const [state, formAction, pending] = useActionState(
+    updateSubaccountRegion,
+    initialState
+  );
+  const [saved, setSaved] = useState(false);
+  const seen = useRef(state);
+
+  useEffect(() => {
+    if (state === seen.current) return;
+    seen.current = state;
+    setSaved(!state.error);
+  }, [state]);
+
+  return (
+    <form action={formAction} className="flex flex-col gap-4">
+      <input type="hidden" name="org_id" value={orgId} />
+      {/* Remonta los campos cuando cambia lo guardado, para que en
+          pantalla quede lo normalizado por el servidor. */}
+      <CamposRegion
+        key={`${region.timezone}|${region.currency}|${region.locale}`}
+        guardada={region}
+        instanteEjemplo={instanteEjemplo}
+        idPrefix="sub-region"
+      />
+      {state.error && <p className="text-sm text-destructive">{state.error}</p>}
+      <div className="flex items-center gap-3">
+        <Button type="submit" disabled={pending}>
+          {pending ? "Guardando…" : "Guardar región"}
         </Button>
         {saved && !pending && !state.error && (
           <span className="text-sm text-muted-foreground">Cambios guardados</span>

@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 import { dispatchEvent } from "@/lib/automation/engine";
 import { enviarMensajeMeta } from "@/lib/channels/meta";
 import { leerCredenciales } from "@/lib/channels/credenciales";
+import { registrarError } from "@/lib/observabilidad";
 
 export interface ActionState {
   error: string | null;
@@ -188,6 +189,15 @@ export async function sendReply(
     });
 
     if (!envio.ok) {
+      // A la bitácora además de a la pantalla: quien escribe ve el motivo
+      // ahora, pero la agencia necesita ver el patrón después ("a este
+      // cliente le rebotan todos los envíos desde el martes").
+      await registrarError(supabase, "envio", envio.error ?? "Meta rechazó el mensaje", {
+        orgId: session.org.id,
+        entityType: "conversation",
+        entityId: conversationId,
+        detalle: { canal, destinatario: conversacion.external_id },
+      });
       // El motivo de Meta se muestra tal cual: "fuera de la ventana de 24
       // horas" y "el número no existe" piden acciones distintas, y un
       // mensaje genérico deja a la persona sin saber cuál es.

@@ -21,6 +21,7 @@ const groups: NavGroup[] = [
     items: [
       { href: "/configuracion", label: "Perfil", exact: true },
       { href: "/configuracion/equipo", label: "Equipo" },
+      { href: "/configuracion/exportar", label: "Exportar datos" },
     ],
   },
   {
@@ -32,7 +33,10 @@ const groups: NavGroup[] = [
   },
   {
     heading: "Conexiones",
-    items: [{ href: "/configuracion/integraciones", label: "Integraciones" }],
+    items: [
+      { href: "/configuracion/integraciones", label: "Integraciones" },
+      { href: "/configuracion/plantillas", label: "Plantillas de WhatsApp" },
+    ],
   },
 ];
 

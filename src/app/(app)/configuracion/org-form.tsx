@@ -4,7 +4,9 @@ import { useActionState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { updateOrganization, type ActionState } from "./actions";
+import type { ConfigRegional } from "@/lib/locale";
+import { CamposRegion } from "@/lib/region/campos";
+import { updateOrganization, updateRegion, type ActionState } from "./actions";
 
 const initialState: ActionState = { error: null };
 
@@ -36,6 +38,43 @@ export function OrgForm({ name, rut }: { name: string; rut: string }) {
       <div>
         <Button type="submit" disabled={pending}>
           {pending ? "Guardando…" : "Guardar cambios"}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+/** Zona horaria, moneda e idioma con que se lee toda la aplicación */
+export function RegionForm({
+  region,
+  instanteEjemplo,
+}: {
+  region: ConfigRegional;
+  instanteEjemplo: string;
+}) {
+  const [state, formAction, pending] = useActionState(
+    updateRegion,
+    initialState
+  );
+
+  return (
+    <form action={formAction} className="flex flex-col gap-4">
+      {/* La key remonta los campos cuando cambia lo guardado: si el
+          servidor normalizó algo ("clp" → "CLP"), en pantalla queda lo
+          que quedó en la base y no lo que se tipeó. */}
+      <CamposRegion
+        key={`${region.timezone}|${region.currency}|${region.locale}`}
+        guardada={region}
+        instanteEjemplo={instanteEjemplo}
+        idPrefix="org-region"
+      />
+      {state.error && <p className="text-sm text-destructive">{state.error}</p>}
+      {state.success && !state.error && (
+        <p className="text-sm text-success">{state.success}</p>
+      )}
+      <div>
+        <Button type="submit" disabled={pending}>
+          {pending ? "Guardando…" : "Guardar región"}
         </Button>
       </div>
     </form>

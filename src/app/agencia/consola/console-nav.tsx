@@ -2,13 +2,15 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, Bot, DollarSign } from "lucide-react";
+import { Activity, Bot, DollarSign, Gauge, TriangleAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const tabs = [
   { href: "/agencia/consola", label: "Resumen", icon: Activity, exact: true },
   { href: "/agencia/consola/agentes", label: "Agentes", icon: Bot },
   { href: "/agencia/consola/consumo", label: "Consumo", icon: DollarSign },
+  { href: "/agencia/consola/limites", label: "Límites", icon: Gauge },
+  { href: "/agencia/consola/errores", label: "Errores", icon: TriangleAlert },
 ];
 
 export function ConsoleNav() {

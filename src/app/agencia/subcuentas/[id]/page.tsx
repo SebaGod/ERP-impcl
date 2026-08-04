@@ -11,7 +11,15 @@ import {
 } from "lucide-react";
 import { requireAgencyContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { formatDate, formatRut } from "@/lib/format";
+import { formatRut } from "@/lib/format";
+import {
+  REGION_CHILE,
+  formatFecha,
+  formatMonto,
+  regionDe,
+  type ConfigRegional,
+} from "@/lib/locale";
+import { regionUsable } from "@/lib/region/validacion";
 import { Badge } from "@/components/ui/badge";
 import { buttonClasses } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -21,7 +29,11 @@ import {
   type SubaccountStatus,
 } from "@/lib/agency/types";
 import { EnterOrgButton } from "../../agency-forms";
-import { ApplyTemplateForm, SubaccountForm } from "./subaccount-form";
+import {
+  ApplyTemplateForm,
+  RegionSubcuentaForm,
+  SubaccountForm,
+} from "./subaccount-form";
 
 export const metadata: Metadata = { title: "Subcuenta" };
 
@@ -38,6 +50,9 @@ interface OrgRow {
   contact_phone: string | null;
   notes: string | null;
   created_at: string;
+  timezone: string | null;
+  currency: string | null;
+  locale: string | null;
 }
 
 interface SnapshotOption {
@@ -58,7 +73,7 @@ export default async function SubcuentaPage({
   const { data: orgData } = await supabase
     .from("organizations")
     .select(
-      "id, name, slug, rut, status, plan, monthly_fee, contact_name, contact_email, contact_phone, notes, created_at"
+      "id, name, slug, rut, status, plan, monthly_fee, contact_name, contact_email, contact_phone, notes, created_at, timezone, currency, locale"
     )
     .eq("id", id)
     .eq("agency_id", session.agency.id)
@@ -100,6 +115,18 @@ export default async function SubcuentaPage({
 
   const snapshots = (templates.data ?? []) as SnapshotOption[];
 
+  // Fechas y montos de esta ficha se leen con la región de la subcuenta,
+  // no con la del proveedor. Si lo guardado no sirve para formatear —solo
+  // puede pasar por una edición a mano en la base— usamos Chile y lo
+  // avisamos, en vez de tumbar la página con un error de Intl.
+  const region = regionDe(org);
+  const regionSirve = regionUsable(region);
+  const formato: ConfigRegional = regionSirve ? region : REGION_CHILE;
+
+  // Un instante único para el ejemplo del formulario: servidor y
+  // navegador tienen que formatear exactamente el mismo momento.
+  const instanteEjemplo = new Date().toISOString();
+
   const metrics = [
     { label: "Contactos", value: contacts.count ?? 0, icon: Contact },
     {
@@ -139,7 +166,7 @@ export default async function SubcuentaPage({
           </div>
           <p className="text-sm text-muted-foreground">
             {org.rut ? `RUT ${formatRut(org.rut)} · ` : ""}
-            Cliente desde el {formatDate(org.created_at)}
+            Cliente desde el {formatFecha(org.created_at, formato)}
           </p>
         </div>
         <EnterOrgButton orgId={id} label="Entrar a la cuenta" />
@@ -181,6 +208,38 @@ export default async function SubcuentaPage({
               contact_phone: org.contact_phone,
               notes: org.notes,
             }}
+            moneda={formato.currency}
+            cobroFormateado={
+              org.monthly_fee > 0 ? formatMonto(org.monthly_fee, formato) : null
+            }
+          />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Región</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Elige el país y quedan fijados los tres valores de abajo. El cliente
+            también puede cambiarlos desde su configuración.
+          </p>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          {!regionSirve && (
+            <p
+              role="alert"
+              className="rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning"
+            >
+              Lo que hay guardado ({org.timezone} · {org.currency} ·{" "}
+              {org.locale}) no sirve para formatear fechas ni montos, así que
+              esta ficha los está mostrando con el formato de Chile. Corrígelo
+              acá abajo.
+            </p>
+          )}
+          <RegionSubcuentaForm
+            orgId={org.id}
+            region={region}
+            instanteEjemplo={instanteEjemplo}
           />
         </CardContent>
       </Card>
