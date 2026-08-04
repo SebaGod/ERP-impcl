@@ -181,7 +181,7 @@ export function DocumentosTabla({
 
       <div
         className={cn(
-          "overflow-hidden rounded-xl border border-border bg-card shadow-sm transition-opacity",
+          "overflow-x-auto rounded-xl border border-border bg-card shadow-sm transition-opacity",
           isPending && "opacity-60"
         )}
         aria-busy={isPending}

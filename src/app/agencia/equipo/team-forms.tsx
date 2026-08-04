@@ -434,7 +434,7 @@ export function TablaEquipo({
         </div>
       )}
 
-      <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+      <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[52rem] text-sm">
             <thead>
@@ -758,7 +758,7 @@ export function TablaInvitaciones({
           ))}
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+      <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[52rem] text-sm">
             <thead>

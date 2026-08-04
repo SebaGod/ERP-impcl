@@ -205,7 +205,12 @@ export function InboxList({
                 onClick={() => aplicar({ estado: p.valor })}
                 aria-pressed={activa}
                 className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors duration-150",
+                  // Abiertas / Cerradas / Todas es el control principal de
+                  // la bandeja y en el teléfono quedaba en 34px de alto.
+                  // Acá se falla el toque y se termina en la pestaña de al
+                  // lado, que es peor que no tener el filtro: parece que
+                  // desaparecieron conversaciones.
+                  "inline-flex min-h-11 items-center gap-1.5 rounded-full border px-4 text-sm font-medium transition-colors duration-150 sm:min-h-0 sm:px-3 sm:py-1.5",
                   activa
                     ? "border-primary bg-primary/10 text-primary"
                     : "border-border text-muted-foreground hover:bg-muted hover:text-foreground"
