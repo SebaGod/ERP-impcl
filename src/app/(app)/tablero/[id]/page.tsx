@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, Pencil } from "lucide-react";
 import { requireOrgContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { exigirLectura } from "@/lib/lectura";
 import {
   formatMonto,
   formatFecha,
@@ -66,7 +67,7 @@ export default async function OrdenDetallePage({
   // horas del historial y de las notas, su zona horaria.
   const region = session.org.region;
 
-  const { data: workOrder } = await supabase
+  const workOrderRes = await supabase
     .from("work_orders")
     .select(
       "id, code, title, description, stage_id, due_date, amount_net, tax_rate, completed_at, created_at, assigned_to, clients:contacts (id, name)"
@@ -75,6 +76,7 @@ export default async function OrdenDetallePage({
     .eq("org_id", session.org.id)
     .maybeSingle();
 
+  const workOrder = exigirLectura(workOrderRes, "la orden de trabajo");
   if (!workOrder) notFound();
 
   const [

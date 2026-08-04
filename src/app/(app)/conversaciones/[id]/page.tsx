@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, Bot } from "lucide-react";
 import { requireOrgContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { exigirLectura } from "@/lib/lectura";
 import { formatFechaHora } from "@/lib/locale";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -25,7 +26,7 @@ export default async function ConversacionDetallePage({
   const region = session.org.region;
   const supabase = await createClient();
 
-  const { data: conversation } = await supabase
+  const conversationRes = await supabase
     .from("conversations")
     .select(
       "id, channel, status, ai_enabled, ai_agent_id, contacts (id, name, lifecycle, score)"
@@ -33,6 +34,7 @@ export default async function ConversacionDetallePage({
     .eq("id", id)
     .eq("org_id", session.org.id)
     .maybeSingle();
+  const conversation = exigirLectura(conversationRes, "la conversación");
   if (!conversation) notFound();
 
   const contact = conversation.contacts as unknown as {

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { requireAdminContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { exigirLectura } from "@/lib/lectura";
 import type {
   AutomationRow,
   Condition,
@@ -29,13 +30,14 @@ export default async function EditarAutomatizacionPage({
   const session = await requireAdminContext();
   const supabase = await createClient();
 
-  const { data: fila } = await supabase
+  const filaRes = await supabase
     .from("automations")
     .select(CAMPOS_AUTOMATIZACION)
     .eq("id", id)
     .eq("org_id", session.org.id)
     .maybeSingle();
 
+  const fila = exigirLectura(filaRes, "la automatización");
   if (!fila) notFound();
 
   // Sin tipos generados, conditions/actions llegan como jsonb suelto.

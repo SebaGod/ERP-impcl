@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, Bot, CalendarCheck, User } from "lucide-react";
 import { requireOrgContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { exigirLectura } from "@/lib/lectura";
 import { formatFechaHora } from "@/lib/locale";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -27,12 +28,13 @@ export default async function ProbarAgentePage({
   const region = session.org.region;
   const supabase = await createClient();
 
-  const { data: agent } = await supabase
+  const agentRes = await supabase
     .from("ai_agents")
     .select("id, name, model")
     .eq("id", id)
     .eq("org_id", session.org.id)
     .maybeSingle();
+  const agent = exigirLectura(agentRes, "el agente");
   if (!agent) notFound();
 
   // Sin conversación: ofrecer iniciar una de prueba
@@ -52,7 +54,7 @@ export default async function ProbarAgentePage({
     );
   }
 
-  const { data: conversation } = await supabase
+  const conversationRes = await supabase
     .from("conversations")
     .select(
       "id, ai_enabled, contacts (id, name, lifecycle, score)"
@@ -60,6 +62,7 @@ export default async function ProbarAgentePage({
     .eq("id", conversationId)
     .eq("org_id", session.org.id)
     .maybeSingle();
+  const conversation = exigirLectura(conversationRes, "la conversación de prueba");
   if (!conversation) notFound();
 
   const contact = conversation.contacts as unknown as {

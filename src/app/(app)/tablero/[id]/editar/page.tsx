@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { requireAdminContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { exigirLectura } from "@/lib/lectura";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { WorkOrderForm } from "../../work-order-form";
 import { updateWorkOrder } from "../../actions";
@@ -19,7 +20,7 @@ export default async function EditarOrdenPage({
   const session = await requireAdminContext();
   const supabase = await createClient();
 
-  const [{ data: workOrder }, { data: clients }] = await Promise.all([
+  const [workOrderRes, { data: clients }] = await Promise.all([
     supabase
       .from("work_orders")
       .select("id, code, title, description, client_id, due_date, amount_net")
@@ -33,6 +34,7 @@ export default async function EditarOrdenPage({
       .order("name"),
   ]);
 
+  const workOrder = exigirLectura(workOrderRes, "la orden de trabajo");
   if (!workOrder) notFound();
 
   return (

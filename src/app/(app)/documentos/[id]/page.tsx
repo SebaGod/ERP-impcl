@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, Link2 } from "lucide-react";
 import { requireOrgContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { exigirLectura } from "@/lib/lectura";
 import { formatFecha, formatMonto } from "@/lib/locale";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -39,7 +40,7 @@ export default async function DocumentoPage({
   const supabase = await createClient();
   const region = session.org.region;
 
-  const [{ data: doc }, { data: items }, { data: emisor }] = await Promise.all([
+  const [docRes, { data: items }, { data: emisor }] = await Promise.all([
     supabase
       .from("dte_documents")
       .select("*")
@@ -59,6 +60,10 @@ export default async function DocumentoPage({
       .maybeSingle(),
   ]);
 
+  // Acá la distinción es cara: si la lectura falla y decimos "no existe",
+  // lo siguiente que hace quien mira es emitir el documento de nuevo, y
+  // una factura duplicada solo se deshace con una nota de crédito.
+  const doc = exigirLectura(docRes, "el documento tributario");
   if (!doc) notFound();
 
   const codigo = doc.tipo as CodigoDte;

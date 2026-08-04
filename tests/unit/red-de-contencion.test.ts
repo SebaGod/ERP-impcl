@@ -149,6 +149,28 @@ describe("nadie queda varado en un 404", () => {
   });
 });
 
+describe("un 404 nunca sale de una consulta caída", () => {
+  /** Páginas que muestran un 404 y además leen de la base */
+  const detalles = TODOS.filter((dir) => {
+    const page = join(dir, "page.tsx");
+    if (!existsSync(page)) return false;
+    const fuente = readFileSync(page, "utf8");
+    return fuente.includes("notFound()") && fuente.includes("supabase");
+  });
+
+  for (const dir of detalles) {
+    it(`${rel(dir)} separa "no existe" de "no se pudo leer"`, () => {
+      const fuente = readFileSync(join(dir, "page.tsx"), "utf8");
+      // El patrón que había en las doce era `const { data: x } = await
+      // supabase...` seguido de `if (!x) notFound()`: al desestructurar
+      // solo data se pierde el error, y los dos casos llegan al if como
+      // null. La pantalla entonces afirma que el registro no existe
+      // cuando lo único cierto es que no pudo leerlo.
+      expect(fuente).toContain("exigirLectura");
+    });
+  }
+});
+
 describe("los boundaries usan la API de esta versión de Next", () => {
   const boundaries = TODOS.flatMap((dir) => {
     const salida: string[] = [];

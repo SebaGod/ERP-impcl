@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { requireAdminContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { exigirLectura } from "@/lib/lectura";
 import { formatMonto, formatFecha } from "@/lib/locale";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,7 +25,7 @@ export default async function CompraDetallePage({
   // Costos de insumos: los paga el cliente, van en su moneda.
   const region = session.org.region;
 
-  const { data: po } = await supabase
+  const poRes = await supabase
     .from("purchase_orders")
     .select(
       "id, code, status, created_at, received_at, suppliers (name, contact_name, phone, email)"
@@ -33,6 +34,7 @@ export default async function CompraDetallePage({
     .eq("org_id", session.org.id)
     .maybeSingle();
 
+  const po = exigirLectura(poRes, "la orden de compra");
   if (!po) notFound();
 
   const status = po.status as PoStatus;

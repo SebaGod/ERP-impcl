@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, MessageSquare } from "lucide-react";
 import { requireAdminContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { exigirLectura } from "@/lib/lectura";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { AgentForm } from "../agent-form";
@@ -22,7 +23,7 @@ export default async function AgenteDetallePage({
   const session = await requireAdminContext();
   const supabase = await createClient();
 
-  const [{ data: agent }, { data: knowledge }] = await Promise.all([
+  const [agentRes, { data: knowledge }] = await Promise.all([
     supabase
       .from("ai_agents")
       .select("id, name, personality, goal, additional_info, model, auto_reply")
@@ -36,6 +37,7 @@ export default async function AgenteDetallePage({
       .order("position"),
   ]);
 
+  const agent = exigirLectura(agentRes, "el agente");
   if (!agent) notFound();
 
   const startTest = startTestConversation.bind(null, agent.id);

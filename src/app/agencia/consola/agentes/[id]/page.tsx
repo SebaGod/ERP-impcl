@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, BookOpen, Bot, Activity } from "lucide-react";
 import { requireAgencyContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { exigirLectura } from "@/lib/lectura";
 import { formatFechaHora, regionDe } from "@/lib/locale";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -49,13 +50,17 @@ export default async function ConsolaAgenteDetallePage({
   const session = await requireAgencyContext();
   const supabase = await createClient();
 
-  const { data: orgsData } = await supabase
+  const orgsRes = await supabase
     .from("organizations")
     .select("id, name, currency, timezone, locale")
     .eq("agency_id", session.agency.id)
     .order("name");
 
-  const subcuentas = (orgsData ?? []) as {
+  // Si esta lectura falla, la lista queda vacía, el find de abajo no
+  // encuentra nada y la pantalla concluye que la subcuenta no existe.
+  // Son dos cosas distintas y acá se separan antes de que se confundan.
+  const subcuentas = (exigirLectura(orgsRes, "las subcuentas de la agencia") ??
+    []) as {
     id: string;
     name: string;
     currency: string | null;
@@ -71,7 +76,7 @@ export default async function ConsolaAgenteDetallePage({
   // cliente trabaja. Una corrida de las 22:00 en Lima no es de las 00:00.
   const region = regionDe(subcuenta);
 
-  const [{ data: agenteData }, { data: conocimientoData }, { data: corridasData }] =
+  const [agenteRes, { data: conocimientoData }, { data: corridasData }] =
     await Promise.all([
       supabase
         .from("ai_agents")
@@ -96,7 +101,7 @@ export default async function ConsolaAgenteDetallePage({
         .limit(20),
     ]);
 
-  const agente = agenteData as AgenteDetalle | null;
+  const agente = exigirLectura(agenteRes, "el agente") as AgenteDetalle | null;
   if (!agente) notFound();
 
   const conocimiento = (conocimientoData ?? []) as EntradaConocimiento[];

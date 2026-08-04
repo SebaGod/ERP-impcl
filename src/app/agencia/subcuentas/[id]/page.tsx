@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { requireAgencyContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { exigirLectura } from "@/lib/lectura";
 import { formatRut } from "@/lib/format";
 import {
   REGION_CHILE,
@@ -70,7 +71,7 @@ export default async function SubcuentaPage({
   const session = await requireAgencyContext();
   const supabase = await createClient();
 
-  const { data: orgData } = await supabase
+  const orgDataRes = await supabase
     .from("organizations")
     .select(
       "id, name, slug, rut, status, plan, monthly_fee, contact_name, contact_email, contact_phone, notes, created_at, timezone, currency, locale"
@@ -79,6 +80,7 @@ export default async function SubcuentaPage({
     .eq("agency_id", session.agency.id)
     .maybeSingle();
 
+  const orgData = exigirLectura(orgDataRes, "la subcuenta");
   if (!orgData) notFound();
   const org = orgData as OrgRow;
 

@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, CalendarCheck, MessageSquare } from "lucide-react";
 import { requireOrgContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { exigirLectura } from "@/lib/lectura";
 import { formatFechaHora } from "@/lib/locale";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,7 +24,7 @@ export default async function ContactoDetallePage({
   const session = await requireOrgContext();
   const supabase = await createClient();
 
-  const { data: contact } = await supabase
+  const contactRes = await supabase
     .from("contacts")
     .select(
       "id, name, email, phone, company, source, lifecycle, score, notes"
@@ -31,6 +32,7 @@ export default async function ContactoDetallePage({
     .eq("id", id)
     .eq("org_id", session.org.id)
     .maybeSingle();
+  const contact = exigirLectura(contactRes, "el contacto");
   if (!contact) notFound();
 
   const [{ data: conversations }, { data: appointments }] = await Promise.all([

@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { requireAdminContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { exigirLectura } from "@/lib/lectura";
 import { formatMonto, formatFecha, hoyISO } from "@/lib/locale";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -35,7 +36,7 @@ export default async function CotizacionDetallePage({
   // Precios, costos y márgenes de esta cotización son del cliente: su moneda.
   const region = session.org.region;
 
-  const { data: quote } = await supabase
+  const quoteRes = await supabase
     .from("quotes")
     .select(
       "id, code, status, client_id, issue_date, expires_at, tax_rate, net_total, tax_total, gross_total, est_cost_total, notes, public_token, clients:contacts (name)"
@@ -44,6 +45,7 @@ export default async function CotizacionDetallePage({
     .eq("org_id", session.org.id)
     .maybeSingle();
 
+  const quote = exigirLectura(quoteRes, "la cotización");
   if (!quote) notFound();
 
   const [
