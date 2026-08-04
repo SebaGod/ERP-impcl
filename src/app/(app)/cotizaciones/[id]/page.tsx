@@ -17,6 +17,10 @@ import { HeaderForm } from "./header-form";
 import { ItemForm, type ProductOption } from "./item-form";
 import { RemoveItemButton } from "./item-row";
 import { QuoteActions } from "./quote-actions";
+import {
+  EmitirDocumento,
+  type DocumentoVinculado,
+} from "@/components/emitir-documento";
 
 export const metadata: Metadata = { title: "Cotización" };
 
@@ -42,8 +46,13 @@ export default async function CotizacionDetallePage({
 
   if (!quote) notFound();
 
-  const [{ data: items }, { data: clients }, { data: products }, { data: wo }] =
-    await Promise.all([
+  const [
+    { data: items },
+    { data: clients },
+    { data: products },
+    { data: wo },
+    { data: dtes },
+  ] = await Promise.all([
       supabase
         .from("quote_items")
         .select("id, description, quantity, unit_price_net, unit_cost, position")
@@ -67,6 +76,16 @@ export default async function CotizacionDetallePage({
         .select("id")
         .eq("quote_id", id)
         .maybeSingle(),
+      // Lo que ya se facturó de esta cotización: verlo antes evita
+      // emitirlo dos veces, que se deshace con una nota de crédito.
+      supabase
+        .from("dte_documents")
+        .select("id, tipo, folio, estado")
+        .eq("org_id", session.org.id)
+        .eq("quote_id", id)
+        .order("created_at")
+        .limit(20)
+        .returns<DocumentoVinculado[]>(),
     ]);
 
   // El vencimiento se mide contra el día del negocio que emite, no el nuestro.
@@ -266,6 +285,25 @@ export default async function CotizacionDetallePage({
               />
             </CardContent>
           </Card>
+
+          {/* Un borrador todavía no es una venta: no hay nada que
+              declarar hasta que el cliente lo tenga en la mano. */}
+          {!isDraft && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Boleta o factura</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <EmitirDocumento
+                  origen="cotizacion"
+                  id={quote.id}
+                  // Quien cotiza formalmente suele necesitar factura
+                  tipoSugerido={33}
+                  documentos={dtes ?? []}
+                />
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
     </div>

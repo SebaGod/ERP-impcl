@@ -41,6 +41,64 @@ export async function updateOrganization(
 }
 
 /**
+ * Datos tributarios que el SII exige en cada documento.
+ *
+ * Van aparte del perfil porque no son cosmética: sin giro, actividad
+ * económica, dirección y comuna, el SII RECHAZA la factura completa y el
+ * folio se pierde. Se completan una vez y valen para todo lo que se emita
+ * después, así que conviene que estén antes de la primera factura y no
+ * después del primer rechazo.
+ *
+ * Todos son opcionales acá: se guarda lo que haya. Bloquear el guardado
+ * hasta tenerlos todos obligaría a juntar la carpeta tributaria completa
+ * antes de poder anotar el giro, y quien entra a completar un campo se
+ * iría sin guardar ninguno.
+ */
+export async function updateDatosTributarios(
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const session = await requireAdminContext();
+
+  const texto = (campo: string) => String(formData.get(campo) ?? "").trim();
+  const actecoCrudo = texto("acteco").replace(/\D/g, "");
+
+  // El código del SII tiene 6 dígitos hoy; el rango es ancho a propósito
+  // para no rechazar uno legítimo de otra época. Lo que sí se rechaza es
+  // un número que claramente no es un código, porque guardarlo dejaría
+  // documentos rechazados sin que nadie sepa por qué.
+  if (actecoCrudo && (actecoCrudo.length < 4 || actecoCrudo.length > 8)) {
+    return {
+      error:
+        "El código de actividad económica son 6 dígitos. Lo encuentras en tu carpeta tributaria del SII.",
+    };
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("organizations")
+    .update({
+      razon_social: texto("razon_social") || null,
+      giro: texto("giro") || null,
+      acteco: actecoCrudo ? Number(actecoCrudo) : null,
+      direccion: texto("direccion") || null,
+      comuna: texto("comuna") || null,
+      ciudad: texto("ciudad") || null,
+    })
+    .eq("id", session.org.id);
+
+  if (error) {
+    return { error: "No pudimos guardar los cambios. Intenta de nuevo." };
+  }
+
+  revalidatePath("/configuracion");
+  // El aviso de "te faltan datos" vive en las pantallas de documentos:
+  // si no se revalidan, sigue avisando de algo que ya se completó.
+  revalidatePath("/documentos");
+  return { error: null, success: "Datos tributarios guardados" };
+}
+
+/**
  * Zona horaria, moneda e idioma de la organización.
  *
  * Va aparte del perfil de empresa porque cambia cómo se lee TODA la

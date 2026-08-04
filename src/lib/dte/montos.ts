@@ -74,6 +74,23 @@ export function netoDesdeBruto(bruto: number, tasa = TASA_IVA): number {
   return Math.round(bruto / (1 + tasa));
 }
 
+/**
+ * Del neto al precio con IVA incluido.
+ *
+ * Es el camino inverso de netoDesdeBruto y hace falta al convertir: una
+ * cotización y una orden de trabajo guardan precios NETOS, y una boleta
+ * los quiere con IVA incluido. Pasarlos tal cual haría que el cliente
+ * pagara el neto y el negocio pusiera el IVA de su bolsillo.
+ *
+ * No es exactamente reversible por el redondeo: para algunos montos
+ * netoDesdeBruto(brutoDesdeNeto(n)) da n±1. Es inevitable trabajando en
+ * pesos enteros, y el número que manda es el bruto —lo que el cliente
+ * paga—, porque de ahí se deriva todo lo demás.
+ */
+export function brutoDesdeNeto(neto: number, tasa = TASA_IVA): number {
+  return Math.round(neto * (1 + tasa));
+}
+
 /** Redondeo a peso. Centralizado para que nadie use trunc por descuido. */
 function aPesos(valor: number): number {
   return Math.round(valor);

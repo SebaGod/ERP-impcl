@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  brutoDesdeNeto,
   calcularDte,
   montosCuadran,
   montosParaAnular,
@@ -293,5 +294,69 @@ describe("totales del libro de ventas", () => {
     expect(totales.exento).toBe(50_000);
     expect(totales.iva).toBe(88_933);
     expect(totales.total).toBe(607_000);
+  });
+});
+
+describe("convertir precios netos a precios con IVA", () => {
+  it("agrega el IVA al neto", () => {
+    expect(brutoDesdeNeto(10_000)).toBe(11_900);
+    expect(brutoDesdeNeto(1)).toBe(1);
+    expect(brutoDesdeNeto(0)).toBe(0);
+    expect(brutoDesdeNeto(84_034)).toBe(100_000);
+  });
+
+  it("vuelve al neto de origen o a un peso de distancia", () => {
+    // En pesos enteros el ida y vuelta no es exacto: lo que importa es
+    // que la diferencia sea de un peso y no de un 19%, que es lo que
+    // pasaría si alguien se saltara la conversión.
+    for (let neto = 1; neto <= 20_000; neto++) {
+      const vuelta = netoDesdeBruto(brutoDesdeNeto(neto));
+      expect(Math.abs(vuelta - neto)).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it("una cotización convertida a boleta cobra el mismo total", () => {
+    // El caso que decide si el negocio regala el IVA: la cotización
+    // guarda precios NETOS y la boleta los quiere con IVA incluido.
+    const netas = [
+      { descripcion: "Diseño", cantidad: 1, precioUnitario: 100_000 },
+      { descripcion: "Impresión", cantidad: 2, precioUnitario: 25_000 },
+    ];
+    const brutoDeCotizacion = netas.reduce(
+      (suma, l) => suma + l.cantidad * l.precioUnitario,
+      0
+    );
+    const conIva = netas.map((l) => ({
+      ...l,
+      precioUnitario: brutoDesdeNeto(l.precioUnitario),
+    }));
+
+    const boleta = calcularDte(39, conIva);
+    // El cliente paga el neto cotizado más su IVA, no el neto pelado
+    expect(boleta.montos.total).toBe(Math.round(brutoDeCotizacion * 1.19));
+    // Y adentro el documento cuadra: neto + IVA es exactamente lo cobrado
+    expect(boleta.montos.neto + boleta.montos.iva).toBe(boleta.montos.total);
+  });
+
+  it("copiar los netos a una boleta sin convertir se lleva el IVA del negocio", () => {
+    // Documenta el error que la conversión existe para evitar: los mismos
+    // $150.000 netos, puestos crudos en una boleta, dejan $23.950 menos.
+    const sinConvertir = calcularDte(39, [
+      { descripcion: "Diseño", cantidad: 1, precioUnitario: 150_000 },
+    ]);
+    const convertido = calcularDte(39, [
+      { descripcion: "Diseño", cantidad: 1, precioUnitario: brutoDesdeNeto(150_000) },
+    ]);
+    expect(sinConvertir.montos.total).toBe(150_000);
+    expect(convertido.montos.total).toBe(178_500);
+  });
+
+  it("a una factura no se le convierte nada: ya son netos", () => {
+    const factura = calcularDte(33, [
+      { descripcion: "Servicio", cantidad: 1, precioUnitario: 100_000 },
+    ]);
+    expect(factura.montos.neto).toBe(100_000);
+    expect(factura.montos.iva).toBe(19_000);
+    expect(factura.montos.total).toBe(119_000);
   });
 });

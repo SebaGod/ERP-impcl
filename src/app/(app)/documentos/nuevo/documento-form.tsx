@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Plus, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatMonto, type ConfigRegional } from "@/lib/locale";
@@ -13,6 +14,7 @@ import { ContactPicker } from "@/components/contact-picker";
 import { calcularDte, type LineaDte } from "@/lib/dte/montos";
 import { TIPOS_DTE, TIPOS_EMISION, tipoDte, type CodigoDte } from "@/lib/dte/tipos";
 import { crearDocumento, type EstadoAccion } from "../actions";
+import type { OrigenDocumento } from "./origen";
 
 const inicial: EstadoAccion = { error: null };
 
@@ -26,6 +28,25 @@ interface Fila {
 
 function filaVacia(id: number): Fila {
   return { id, descripcion: "", cantidad: "1", precio: "", exenta: false };
+}
+
+/**
+ * Las líneas que vienen de una cotización o una orden.
+ *
+ * Los precios ya llegan en la base correcta —el servidor los convirtió
+ * según el tipo de documento— y acá solo se pasan a texto para poder
+ * editarlos. Volver a convertir sería aplicar el IVA dos veces.
+ */
+function filasDeOrigen(origen: OrigenDocumento | null): Fila[] {
+  if (!origen || origen.lineas.length === 0) return [filaVacia(0)];
+  return origen.lineas.map((l, i) => ({
+    id: i,
+    descripcion: l.descripcion,
+    // Sin decimales innecesarios: "1" y no "1.000"
+    cantidad: String(l.cantidad),
+    precio: String(l.precioUnitario),
+    exenta: Boolean(l.exenta),
+  }));
 }
 
 /** Los puntos son separador de miles en Chile, no decimales */
@@ -43,18 +64,41 @@ export function DocumentoForm({
   region,
   hoy,
   tipoInicial = 39,
+  origen = null,
 }: {
   region: ConfigRegional;
   /** El día del negocio, calculado en el servidor */
   hoy: string;
   tipoInicial?: CodigoDte;
+  /** Cotización u orden de la que viene el detalle ya cargado */
+  origen?: OrigenDocumento | null;
 }) {
+  const router = useRouter();
   const [state, formAction, pending] = useActionState(crearDocumento, inicial);
+  const iniciales = useMemo(() => filasDeOrigen(origen), [origen]);
   const [codigo, setCodigo] = useState<CodigoDte>(tipoInicial);
-  const [filas, setFilas] = useState<Fila[]>([filaVacia(0)]);
-  const [siguienteId, setSiguienteId] = useState(1);
+  const [filas, setFilas] = useState<Fila[]>(iniciales);
+  const [siguienteId, setSiguienteId] = useState(iniciales.length);
 
   const tipo = tipoDte(codigo);
+
+  /**
+   * Cambiar el tipo cuando el detalle vino de otro documento.
+   *
+   * La conversión de neto a precio con IVA la hace el servidor al cargar,
+   * así que cambiar el tipo acá dejaría los precios en la base del tipo
+   * anterior: pasar de factura a boleta sin reconvertir hace que el
+   * negocio regale el IVA. Se recarga la página con el tipo nuevo y el
+   * servidor vuelve a convertir desde el origen.
+   */
+  function cambiarTipo(nuevo: CodigoDte) {
+    if (!origen) {
+      setCodigo(nuevo);
+      return;
+    }
+    const clave = origen.campo === "quote_id" ? "cotizacion" : "orden";
+    router.replace(`/documentos/nuevo?tipo=${nuevo}&${clave}=${origen.id}`);
+  }
 
   // El mismo cálculo que usa el servidor al guardar: si la pantalla
   // sumara por su cuenta, el usuario vería un total y se guardaría otro.
@@ -86,6 +130,8 @@ export function DocumentoForm({
   return (
     <form action={formAction} className="flex flex-col gap-5">
       <input type="hidden" name="tipo" value={codigo} />
+      {/* Deja el documento vinculado con lo que lo originó */}
+      {origen && <input type="hidden" name={origen.campo} value={origen.id} />}
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="flex flex-col gap-1.5">
@@ -93,7 +139,7 @@ export function DocumentoForm({
           <Select
             id="doc-tipo"
             value={String(codigo)}
-            onChange={(e) => setCodigo(Number(e.target.value) as CodigoDte)}
+            onChange={(e) => cambiarTipo(Number(e.target.value) as CodigoDte)}
           >
             {TIPOS_EMISION.map((c) => (
               <option key={c} value={c}>
@@ -115,10 +161,14 @@ export function DocumentoForm({
           Cliente {tipo.exigeReceptor ? "*" : <span className="font-normal text-muted-foreground">(opcional)</span>}
         </Label>
         {tipo.exigeReceptor ? (
-          <ContactPicker name="contact_id" />
+          <ContactPicker name="contact_id" inicial={origen?.contacto ?? null} />
         ) : (
           <>
-            <ContactPicker name="contact_id" requerido={false} />
+            <ContactPicker
+              name="contact_id"
+              requerido={false}
+              inicial={origen?.contacto ?? null}
+            />
             <p className="text-xs text-muted-foreground">
               Una boleta se le puede emitir a alguien sin identificar. Si eliges
               un cliente, queda asociada a su ficha.

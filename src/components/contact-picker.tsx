@@ -23,13 +23,20 @@ import {
 export function ContactPicker({
   name = "contact_id",
   requerido = true,
+  inicial = null,
 }: {
   name?: string;
   requerido?: boolean;
+  /**
+   * Contacto ya elegido al abrir. Lo usan los formularios que vienen de
+   * otro documento —facturar una cotización, por ejemplo—, donde el
+   * cliente ya está decidido y volver a buscarlo es puro trámite.
+   */
+  inicial?: ContactoElegible | null;
 }) {
   const [query, setQuery] = useState("");
   const [resultados, setResultados] = useState<ContactoElegible[]>([]);
-  const [elegido, setElegido] = useState<ContactoElegible | null>(null);
+  const [elegido, setElegido] = useState<ContactoElegible | null>(inicial);
   const [abierto, setAbierto] = useState(false);
   const [buscando, setBuscando] = useState(false);
   const [fallo, setFallo] = useState(false);

@@ -20,6 +20,10 @@ import { NoteForm, DeleteNoteButton } from "./notes";
 import { FilesPanel, type WorkOrderFile } from "./files-panel";
 import { CostsPanel, type WorkOrderCost } from "./costs";
 import { DeleteWorkOrderButton } from "./delete-work-order-button";
+import {
+  EmitirDocumento,
+  type DocumentoVinculado,
+} from "@/components/emitir-documento";
 
 export const metadata: Metadata = { title: "Orden de trabajo" };
 
@@ -81,6 +85,7 @@ export default async function OrdenDetallePage({
     { data: checklistItems },
     { data: files },
     { data: costs },
+    { data: dtes },
   ] = await Promise.all([
     supabase
       .from("work_order_stages")
@@ -121,6 +126,16 @@ export default async function OrdenDetallePage({
           .eq("work_order_id", id)
           .order("created_at")
       : Promise.resolve({ data: [] as never[] }),
+    // Lo que ya se boleteó o facturó de esta orden: verlo antes evita
+    // cobrar dos veces el mismo trabajo.
+    supabase
+      .from("dte_documents")
+      .select("id, tipo, folio, estado")
+      .eq("org_id", session.org.id)
+      .eq("work_order_id", id)
+      .order("created_at")
+      .limit(20)
+      .returns<DocumentoVinculado[]>(),
   ]);
 
   const client = workOrder.clients as unknown as {
@@ -375,6 +390,25 @@ export default async function OrdenDetallePage({
         </div>
 
         <div className="flex flex-col gap-4">
+          {/* Solo admin: emitir un documento tributario compromete al
+              contribuyente, igual que la política de escritura en la base. */}
+          {isAdmin && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Boleta o factura</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <EmitirDocumento
+                  origen="orden"
+                  id={workOrder.id}
+                  // Un trabajo terminado se cobra casi siempre con boleta
+                  tipoSugerido={39}
+                  documentos={dtes ?? []}
+                />
+              </CardContent>
+            </Card>
+          )}
+
           <Card>
             <CardHeader>
               <CardTitle>Notas</CardTitle>
