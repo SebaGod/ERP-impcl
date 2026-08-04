@@ -181,12 +181,58 @@ export function DocumentosTabla({
 
       <div
         className={cn(
-          "overflow-x-auto rounded-xl border border-border bg-card shadow-sm transition-opacity",
+          "rounded-xl border border-border bg-card shadow-sm transition-opacity",
           isPending && "opacity-60"
         )}
         aria-busy={isPending}
       >
-        <div className="overflow-x-auto">
+        {/* Tarjetas en el teléfono.
+            La tabla mide 857px: en una pantalla de 390 entran Tipo, Folio,
+            Fecha y media columna de Cliente, y el Total —que es el número
+            por el que uno abre esta pantalla— queda fuera, hay que ir a
+            buscarlo deslizando. Además la fecha, apretada, se parte en tres
+            líneas. Acá el total va grande y a la derecha, que es donde el
+            ojo lo busca. */}
+        {documentos.length > 0 && (
+          <ul className="divide-y divide-border md:hidden">
+            {documentos.map((d) => {
+              const tipo = TIPOS_DTE[d.tipo];
+              const estado = ESTADOS_DTE[d.estado];
+              return (
+                <li key={d.id} className="flex flex-col gap-1 px-4 py-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <Link
+                      href={`/documentos/${d.id}`}
+                      className="min-w-0 py-2 font-medium text-primary"
+                    >
+                      {tipo?.corto ?? d.tipo}
+                      {d.folio ? ` N° ${d.folio}` : " sin folio"}
+                    </Link>
+                    <Badge variant={estado?.variant ?? "outline"}>
+                      {estado?.label ?? d.estado}
+                    </Badge>
+                  </div>
+
+                  <p className="truncate text-sm text-muted-foreground">
+                    {d.receptor_razon_social ?? "Consumidor final"}
+                    {d.ref_folio ? ` · sobre folio ${d.ref_folio}` : ""}
+                  </p>
+
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="text-xs tabular-nums text-muted-foreground">
+                      {formatFecha(d.fecha_emision, region)}
+                    </span>
+                    <span className="text-base font-semibold tabular-nums">
+                      {formatMonto(d.total, region)}
+                    </span>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
+        <div className="hidden overflow-x-auto md:block">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">

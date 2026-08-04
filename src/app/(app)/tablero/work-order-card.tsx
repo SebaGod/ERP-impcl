@@ -98,7 +98,10 @@ export function WorkOrderCard({
           disabled={!prevStageId || isPending}
           title="Mover a la etapa anterior"
           aria-label="Mover a la etapa anterior"
-          className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:invisible"
+          // 40px en el teléfono. Con 24 se falla el toque, y fallar
+          // acá no es un clic perdido: mueve la orden a la etapa
+          // equivocada y alguien la ve como terminada sin estarlo.
+          className="grid size-10 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:invisible sm:size-auto sm:p-1"
         >
           <ChevronLeft className="size-4" />
         </button>
@@ -119,7 +122,10 @@ export function WorkOrderCard({
           disabled={!nextStageId || isPending}
           title="Mover a la etapa siguiente"
           aria-label="Mover a la etapa siguiente"
-          className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:invisible"
+          // 40px en el teléfono. Con 24 se falla el toque, y fallar
+          // acá no es un clic perdido: mueve la orden a la etapa
+          // equivocada y alguien la ve como terminada sin estarlo.
+          className="grid size-10 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:invisible sm:size-auto sm:p-1"
         >
           <ChevronRight className="size-4" />
         </button>
