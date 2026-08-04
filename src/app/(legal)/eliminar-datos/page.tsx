@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { brand } from "@/config/brand";
 import { createClient } from "@/lib/supabase/server";
+import { exigirLectura } from "@/lib/lectura";
 import { formatFechaHora } from "@/lib/locale";
 
 export const metadata: Metadata = {
@@ -26,9 +27,16 @@ const ESTADOS: Record<string, string> = {
  */
 async function EstadoSolicitud({ codigo }: { codigo: string }) {
   const supabase = await createClient();
-  const { data } = await supabase.rpc("get_data_deletion_status", {
+  const estadoRes = await supabase.rpc("get_data_deletion_status", {
     p_code: codigo,
   });
+
+  // Si la RPC falla, abajo se muestra "no encontramos ninguna solicitud
+  // con ese código" a alguien que sí la hizo. Esta URL la revisa Meta
+  // para aprobar la app y la usa gente ejerciendo su derecho a que le
+  // borren los datos: decirle que su solicitud no existe es lo peor que
+  // puede decir esta página.
+  const data = exigirLectura(estadoRes, "el estado de la solicitud");
 
   const solicitud = (
     (data as { status: string; created_at: string; completed_at: string | null }[] | null) ?? []

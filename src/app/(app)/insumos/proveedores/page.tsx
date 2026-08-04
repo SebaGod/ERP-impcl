@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { requireAdminContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { exigirLectura } from "@/lib/lectura";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   AddSupplierForm,
@@ -16,11 +17,13 @@ export default async function ProveedoresPage() {
   const session = await requireAdminContext();
   const supabase = await createClient();
 
-  const { data: suppliers } = await supabase
+  const suppliersRes = await supabase
     .from("suppliers")
     .select("id, name, rut, contact_name, phone, email, notes")
     .eq("org_id", session.org.id)
     .order("name");
+
+  const suppliers = exigirLectura(suppliersRes, "los proveedores");
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-4">

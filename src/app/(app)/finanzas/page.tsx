@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { requireAdminContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { exigirLectura } from "@/lib/lectura";
 import { formatFecha, formatMonto, hoyISO } from "@/lib/locale";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -42,7 +43,7 @@ export default async function FinanzasPage() {
       ? `${year + 1}-01-01`
       : `${year}-${String(month + 1).padStart(2, "0")}-01`;
 
-  const [{ data: txns }, { data: categories }, { data: recurring }, receivables] =
+  const [txnsRes, { data: categories }, recurringRes, receivables] =
     await Promise.all([
       supabase
         .from("transactions")
@@ -67,6 +68,16 @@ export default async function FinanzasPage() {
         .eq("is_active", true),
       getReceivables(supabase, session.org.id),
     ]);
+
+  // Cada cifra de esta pantalla sale de estas dos consultas, así que un
+  // fallo silencioso no deja huecos: deja números. Con `txns` caído se
+  // informa "Ingresos del mes: $0", que no es la ausencia de un dato sino
+  // una afirmación falsa sobre el negocio; y con `recurring` caído los
+  // costos fijos dan cero, así que la pantalla dice que no están cargados
+  // y pone el punto de equilibrio en 100%. Un cero inventado en finanzas
+  // es peor que una pantalla que no carga, porque se ve bien.
+  const txns = exigirLectura(txnsRes, "los movimientos del mes");
+  const recurring = exigirLectura(recurringRes, "los costos fijos");
 
   const incomes = (txns ?? []).filter((t) => t.type === "ingreso");
   const expenses = (txns ?? []).filter((t) => t.type === "egreso");

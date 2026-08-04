@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { requireAdminContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { exigirLectura } from "@/lib/lectura";
 import { cn } from "@/lib/utils";
 import type { FieldEntity } from "@/lib/crm/custom-fields";
 import { FieldsTable, type FieldDefRow } from "./fields-table";
@@ -35,7 +36,7 @@ export default async function CamposPage({
 
   const activa: Pestana = e && esPestana(e) ? e : "todo";
 
-  const { data } = await supabase
+  const camposRes = await supabase
     .from("custom_field_defs")
     .select(CAMPOS)
     .eq("org_id", session.org.id)
@@ -43,6 +44,8 @@ export default async function CamposPage({
     .order("folder", { nullsFirst: true })
     .order("position")
     .order("id");
+
+  const data = exigirLectura(camposRes, "los campos personalizados");
 
   const defs = (data ?? []) as unknown as FieldDefRow[];
 

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { requireAdminContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { exigirLectura } from "@/lib/lectura";
 import type { AutomationRow } from "@/lib/automation/catalog";
 import type { FieldDef } from "@/lib/crm/custom-fields";
 import {
@@ -58,8 +59,18 @@ export default async function NuevaAutomatizacionPage({
             .eq("id", id)
             .eq("org_id", session.org.id)
             .maybeSingle()
-        : Promise.resolve({ data: null }),
+        : Promise.resolve({ data: null, error: null }),
     ]);
+
+  // Cada lista alimenta un selector del constructor. Vacías por un fallo,
+  // el flujo se arma igual pero sin la etapa, la etiqueta o el campo que
+  // debía disparar la regla, y la automatización queda mal armada sin que
+  // nada lo haya advertido.
+  exigirLectura(stagesRes, "las etapas");
+  exigirLectura(tagsRes, "las etiquetas");
+  exigirLectura(membersRes, "el equipo");
+  exigirLectura(camposRes, "los campos personalizados");
+  exigirLectura(automationRes, "la automatización a copiar");
 
   const stages = (stagesRes.data ?? []) as StageOption[];
   const tags = (tagsRes.data ?? []) as TagOption[];

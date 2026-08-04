@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { requireAdminContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { exigirLectura } from "@/lib/lectura";
 import { providers, type IntegrationRow } from "@/lib/channels/providers";
 import { IntegrationCards } from "./integration-cards";
 
@@ -12,12 +13,14 @@ export default async function IntegracionesPage() {
   const session = await requireAdminContext();
   const supabase = await createClient();
 
-  const { data } = await supabase
+  const integracionesRes = await supabase
     .from("integrations")
     .select(
       "id, provider, external_id, display_name, status, connected_at, last_event_at, last_error"
     )
     .eq("org_id", session.org.id);
+
+  const data = exigirLectura(integracionesRes, "las integraciones conectadas");
 
   const conectadas = (data ?? []) as IntegrationRow[];
   const activas = conectadas.filter((c) => c.status === "activa").length;

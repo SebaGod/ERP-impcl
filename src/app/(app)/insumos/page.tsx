@@ -3,6 +3,7 @@ import Link from "next/link";
 import { AlertTriangle, Package, ShoppingCart, Truck } from "lucide-react";
 import { requireAdminContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { exigirLectura } from "@/lib/lectura";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { buttonClasses } from "@/components/ui/button";
 import { InventoryRow, type InventoryItem } from "./inventory-row";
@@ -14,12 +15,14 @@ export default async function InsumosPage() {
   const session = await requireAdminContext();
   const supabase = await createClient();
 
-  const { data: items } = await supabase
+  const itemsRes = await supabase
     .from("inventory_items")
     .select("id, name, unit, unit_cost, current_stock, min_stock")
     .eq("org_id", session.org.id)
     .eq("is_active", true)
     .order("name");
+
+  const items = exigirLectura(itemsRes, "el inventario");
 
   const list = (items ?? []) as InventoryItem[];
   const lowStock = list.filter((i) => i.current_stock <= i.min_stock);

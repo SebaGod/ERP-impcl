@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ArrowLeft, Plus, ShoppingCart } from "lucide-react";
 import { requireAdminContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { exigirLectura } from "@/lib/lectura";
 import { formatMonto, formatFecha } from "@/lib/locale";
 import { Badge } from "@/components/ui/badge";
 import { buttonClasses } from "@/components/ui/button";
@@ -17,13 +18,17 @@ export default async function ComprasPage() {
   // Lo que el cliente le paga a SUS proveedores va en su moneda.
   const region = session.org.region;
 
-  const { data: orders } = await supabase
+  const ordersRes = await supabase
     .from("purchase_orders")
     .select(
       "id, code, status, expected_date, created_at, suppliers (name), purchase_order_items (quantity, unit_cost)"
     )
     .eq("org_id", session.org.id)
     .order("created_at", { ascending: false });
+
+  // Sin esto, una consulta caída se dibuja como "aún no tienes órdenes de
+  // compra" y lo razonable es volver a cargar las que ya existían.
+  const orders = exigirLectura(ordersRes, "las órdenes de compra");
 
   const newButton = (
     <Link

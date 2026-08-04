@@ -3,6 +3,7 @@ import Link from "next/link";
 import { FileText, Plus } from "lucide-react";
 import { requireAdminContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { exigirLectura } from "@/lib/lectura";
 import { formatMonto, formatFecha, hoyISO } from "@/lib/locale";
 import { Badge } from "@/components/ui/badge";
 import { buttonClasses } from "@/components/ui/button";
@@ -22,13 +23,15 @@ export default async function CotizacionesPage() {
   // Lo que cotiza el cliente se muestra en SU moneda, no en la nuestra.
   const region = session.org.region;
 
-  const { data: quotes } = await supabase
+  const quotesRes = await supabase
     .from("quotes")
     .select(
       "id, code, status, issue_date, expires_at, net_total, gross_total, clients:contacts (name)"
     )
     .eq("org_id", session.org.id)
     .order("created_at", { ascending: false });
+
+  const quotes = exigirLectura(quotesRes, "las cotizaciones");
 
   // "Vencida" se decide contra el día del negocio que emite: en Lima una
   // cotización sigue vigente cuatro horas después de que en Santiago venció.

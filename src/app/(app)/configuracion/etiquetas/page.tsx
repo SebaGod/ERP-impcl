@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ArrowLeft, Tags } from "lucide-react";
 import { requireAdminContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { exigirLectura } from "@/lib/lectura";
 import {
   Card,
   CardContent,
@@ -18,7 +19,7 @@ export default async function EtiquetasPage() {
   const session = await requireAdminContext();
   const supabase = await createClient();
 
-  const [{ data: tags }, { data: contacts }] = await Promise.all([
+  const [tagsRes, contactsRes] = await Promise.all([
     supabase
       .from("tag_defs")
       .select("id, key, label, color")
@@ -26,6 +27,11 @@ export default async function EtiquetasPage() {
       .order("label"),
     supabase.from("contacts").select("id, tags").eq("org_id", session.org.id),
   ]);
+
+  // Si falla la consulta de contactos, los usos por etiqueta dan cero y
+  // la pantalla invita a borrar etiquetas que sí se están usando.
+  const tags = exigirLectura(tagsRes, "las etiquetas");
+  const contacts = exigirLectura(contactsRes, "los contactos");
 
   const etiquetas = (tags ?? []) as TagDef[];
 

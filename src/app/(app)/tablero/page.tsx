@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Kanban, Plus } from "lucide-react";
 import { requireOrgContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { exigirLectura } from "@/lib/lectura";
 import { formatMonto } from "@/lib/locale";
 import { buttonClasses } from "@/components/ui/button";
 import { WorkOrderCard } from "./work-order-card";
@@ -30,7 +31,7 @@ export default async function TableroPage() {
   // Todo el dinero del tablero es lo que vende el cliente: su moneda.
   const region = session.org.region;
 
-  const [{ data: stages }, { data: workOrders }, { data: sentQuotes }] =
+  const [stagesRes, workOrdersRes, sentQuotesRes] =
     await Promise.all([
       supabase
         .from("work_order_stages")
@@ -52,8 +53,17 @@ export default async function TableroPage() {
             .eq("org_id", session.org.id)
             .eq("status", "enviada")
             .order("created_at", { ascending: false })
-        : Promise.resolve({ data: [] as never[] }),
+        : Promise.resolve({ data: [] as never[], error: null }),
     ]);
+
+  // El tablero es una sola afirmación: "así está la producción hoy". Con
+  // cualquiera de estas tres consultas caída la afirmación sigue
+  // dibujándose igual de convincente pero con columnas vacías y sumas en
+  // cero, y un pipeline vacío es justo el tipo de dato con el que alguien
+  // toma una decisión el lunes por la mañana.
+  const stages = exigirLectura(stagesRes, "las etapas del tablero");
+  const workOrders = exigirLectura(workOrdersRes, "las órdenes de trabajo");
+  const sentQuotes = exigirLectura(sentQuotesRes, "las cotizaciones enviadas");
 
   const orders = (workOrders ?? []) as unknown as BoardWorkOrder[];
   const byStage = new Map<string, BoardWorkOrder[]>();

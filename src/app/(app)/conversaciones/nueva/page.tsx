@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { requireOrgContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { exigirLectura } from "@/lib/lectura";
 import { buttonClasses } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { NewConversationForm } from "./new-conversation-form";
@@ -15,10 +16,16 @@ export default async function NuevaConversacionPage() {
 
   // Solo se necesita saber SI hay contactos: la elección se hace con un
   // buscador que consulta al servidor.
-  const { count } = await supabase
+  const contactosRes = await supabase
     .from("contacts")
     .select("id", { count: "exact", head: true })
     .eq("org_id", session.org.id);
+
+  // El conteo caído vuelve como null y abajo se lee igual que cero,
+  // así que la pantalla manda a crear un contacto a quien ya tiene
+  // toda su agenda cargada.
+  exigirLectura(contactosRes, "los contactos");
+  const count = contactosRes.count;
 
   if ((count ?? 0) === 0) {
     return (

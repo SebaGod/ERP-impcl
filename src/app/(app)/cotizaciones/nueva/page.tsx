@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { requireAdminContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { exigirLectura } from "@/lib/lectura";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { buttonClasses } from "@/components/ui/button";
 import { NewQuoteForm } from "./new-quote-form";
@@ -13,11 +14,13 @@ export default async function NuevaCotizacionPage() {
   const session = await requireAdminContext();
   const supabase = await createClient();
 
-  const { data: clients } = await supabase
+  const clientsRes = await supabase
     .from("contacts")
     .select("id, name")
     .eq("org_id", session.org.id)
     .order("name");
+
+  const clients = exigirLectura(clientsRes, "los clientes");
 
   if ((clients ?? []).length === 0) {
     return (

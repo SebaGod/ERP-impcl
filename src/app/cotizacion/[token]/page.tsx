@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { createClient } from "@/lib/supabase/server";
+import { exigirLectura } from "@/lib/lectura";
 // El RUT sí es chileno: es un dato del país que emite, no una preferencia
 // de presentación, y por eso sigue viniendo de format.ts.
 import { formatRut } from "@/lib/format";
@@ -60,8 +61,18 @@ export default async function CotizacionPublicaPage({
 }) {
   const { token } = await params;
   const supabase = await createClient();
-  const { data } = await supabase.rpc("get_quote_public", { p_token: token });
-  const quote = data as PublicQuote | null;
+  const quoteRes = await supabase.rpc("get_quote_public", { p_token: token });
+  // Acá la confusión entre "no existe" y "no se pudo leer" se le cobra a
+  // otro. Si la RPC falla y caemos en el mensaje de abajo, el cliente de
+  // nuestro cliente lee que el enlace no es válido y que le reclame a
+  // quien se lo mandó. Va a reclamar, el negocio va a revisar, y el
+  // enlace va a funcionar perfecto. Queda un negocio que parece
+  // desprolijo delante de su comprador por un hipo de nuestra base.
+  // Lanzar manda esto al boundary de /cotizacion, que ofrece reintentar
+  // y no acusa a nadie.
+  const quote = exigirLectura(quoteRes, "la cotización pública") as
+    | PublicQuote
+    | null;
 
   if (!quote) {
     return (

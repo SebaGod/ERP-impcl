@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { requireAdminContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { exigirLectura } from "@/lib/lectura";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { buttonClasses } from "@/components/ui/button";
 import { NewPoForm } from "./new-po-form";
@@ -13,11 +14,13 @@ export default async function NuevaCompraPage() {
   const session = await requireAdminContext();
   const supabase = await createClient();
 
-  const { data: suppliers } = await supabase
+  const suppliersRes = await supabase
     .from("suppliers")
     .select("id, name")
     .eq("org_id", session.org.id)
     .order("name");
+
+  const suppliers = exigirLectura(suppliersRes, "los proveedores");
 
   if ((suppliers ?? []).length === 0) {
     return (

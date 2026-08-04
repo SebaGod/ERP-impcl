@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { exigirLectura } from "@/lib/lectura";
 import { brutoDesdeNeto, TASA_IVA, type LineaDte } from "@/lib/dte/montos";
 import { tipoDte, type CodigoDte } from "@/lib/dte/tipos";
 import type { ContactoElegible } from "@/components/contact-picker-actions";
@@ -85,13 +86,13 @@ async function contactoDe(
   contactId: string | null
 ): Promise<ContactoElegible | null> {
   if (!contactId) return null;
-  const { data } = await supabase
+  const contactoRes = await supabase
     .from("contacts")
     .select("id, name, phone, email")
     .eq("id", contactId)
     .eq("org_id", orgId)
     .maybeSingle<ContactoElegible>();
-  return data ?? null;
+  return exigirLectura(contactoRes, "el cliente de la cotización") ?? null;
 }
 
 /** La cotización, si existe, es de esta organización y se puede facturar */
@@ -101,21 +102,27 @@ export async function origenCotizacion(
   quoteId: string,
   codigo: CodigoDte
 ): Promise<OrigenDocumento | null> {
-  const { data: quote } = await supabase
+  const quoteRes = await supabase
     .from("quotes")
     .select("id, code, status, client_id, net_total, tax_rate")
     .eq("id", quoteId)
     .eq("org_id", orgId)
     .maybeSingle<FilaCotizacion>();
+  const quote = exigirLectura(quoteRes, "la cotización de origen");
   if (!quote) return null;
 
-  const { data: items } = await supabase
+  const itemsRes = await supabase
     .from("quote_items")
     .select("description, quantity, unit_price_net")
     .eq("quote_id", quoteId)
     .order("position")
     .limit(500)
     .returns<FilaItem[]>();
+
+  // Un fallo acá no deja el formulario vacío: lo deja con MENOS líneas
+  // de las que tenía la cotización, y el documento se emite por un monto
+  // menor al que el cliente aceptó. Nadie lo nota hasta que cuadran.
+  const items = exigirLectura(itemsRes, "el detalle de la cotización");
 
   const netas: LineaDte[] = (items ?? []).map((i) => ({
     descripcion: i.description,
@@ -162,12 +169,13 @@ export async function origenOrden(
   workOrderId: string,
   codigo: CodigoDte
 ): Promise<OrigenDocumento | null> {
-  const { data: orden } = await supabase
+  const ordenRes = await supabase
     .from("work_orders")
     .select("id, code, title, client_id, amount_net, tax_rate")
     .eq("id", workOrderId)
     .eq("org_id", orgId)
     .maybeSingle<FilaOrden>();
+  const orden = exigirLectura(ordenRes, "la orden de trabajo de origen");
   if (!orden) return null;
 
   const neto = Number(orden.amount_net) || 0;

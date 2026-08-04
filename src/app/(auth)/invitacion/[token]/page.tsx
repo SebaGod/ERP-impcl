@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { exigirLectura } from "@/lib/lectura";
 import { Button, buttonClasses } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -43,10 +44,16 @@ export default async function InvitationPage({
   const { error: acceptError } = await searchParams;
   const supabase = await createClient();
 
-  const [{ data: invitations }, { data: userData }] = await Promise.all([
+  const [invitacionRes, { data: userData }] = await Promise.all([
     supabase.rpc("get_invitation_public", { p_token: token }),
     supabase.auth.getUser(),
   ]);
+
+  // Si la consulta falla, más abajo se dibuja "esta invitación no
+  // existe" y se le pide a la persona que le reclame a quien la invitó.
+  // Es su primer contacto con el sistema y lo primero que ve es una
+  // acusación equivocada sobre alguien que hizo todo bien.
+  const invitations = exigirLectura(invitacionRes, "la invitación");
 
   const invitation = ((invitations as OrgInvitationRow[] | null) ?? [])[0];
   const user = userData?.user;
@@ -54,9 +61,10 @@ export default async function InvitationPage({
   // El mismo enlace sirve para dos cosas distintas: entrar a una empresa o
   // entrar a la agencia que administra varias. Si el token no es de una
   // organización, todavía puede ser de una agencia.
-  const { data: agencyInvitations } = invitation
-    ? { data: null }
+  const agenciaRes = invitation
+    ? { data: null, error: null }
     : await supabase.rpc("get_agency_invitation_public", { p_token: token });
+  const agencyInvitations = exigirLectura(agenciaRes, "la invitación de agencia");
 
   const agencyInvitation = (
     (agencyInvitations as AgencyInvitationRow[] | null) ?? []

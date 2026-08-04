@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { requireAdminContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { exigirLectura } from "@/lib/lectura";
 import { formatMonto } from "@/lib/locale";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { RecurringForm } from "./recurring-form";
@@ -16,7 +17,7 @@ export default async function RecurrentesPage() {
   // Costos del cliente: van en la moneda en que él vende.
   const region = session.org.region;
 
-  const [{ data: expenses }, { data: categories }] = await Promise.all([
+  const [expensesRes, { data: categories }] = await Promise.all([
     supabase
       .from("recurring_expenses")
       .select(
@@ -31,6 +32,11 @@ export default async function RecurrentesPage() {
       .in("kind", ["gasto_fijo", "gasto_variable"])
       .order("name"),
   ]);
+
+  // El total de costos fijos alimenta el punto de equilibrio del mes:
+  // que dé cero por una consulta caída no se ve como un error, se ve
+  // como un negocio sin costos.
+  const expenses = exigirLectura(expensesRes, "los costos recurrentes");
 
   const activeTotal = (expenses ?? [])
     .filter((e) => e.is_active)

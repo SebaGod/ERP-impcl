@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Bot, Plus } from "lucide-react";
 import { requireAdminContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { exigirLectura } from "@/lib/lectura";
 import { Badge } from "@/components/ui/badge";
 import { buttonClasses } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -14,11 +15,13 @@ export default async function AgentesPage() {
   const session = await requireAdminContext();
   const supabase = await createClient();
 
-  const { data: agents } = await supabase
+  const agentsRes = await supabase
     .from("ai_agents")
     .select("id, name, goal, model, is_active, auto_reply")
     .eq("org_id", session.org.id)
     .order("created_at", { ascending: false });
+
+  const agents = exigirLectura(agentsRes, "los agentes");
 
   const newButton = (
     <Link href="/agentes/nuevo" className={buttonClasses("primary", "md")}>

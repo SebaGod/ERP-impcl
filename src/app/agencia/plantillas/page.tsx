@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Layers, Plus } from "lucide-react";
 import { requireAgencyContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { exigirLectura } from "@/lib/lectura";
 import { formatFecha } from "@/lib/locale";
 import { Badge } from "@/components/ui/badge";
 import { buttonClasses } from "@/components/ui/button";
@@ -43,6 +44,11 @@ export default async function PlantillasPage() {
       .eq("agency_id", session.agency.id)
       .order("name"),
   ]);
+
+  // Sin esto, una consulta caída se dibuja como "todavía no tienes
+  // plantillas" y lo siguiente es volver a armar las que ya existían.
+  exigirLectura(snapshotsResult, "las plantillas");
+  exigirLectura(orgsResult, "las subcuentas");
 
   const snapshots = (snapshotsResult.data as SnapshotRow[] | null) ?? [];
   const orgs = (orgsResult.data as { id: string; name: string }[] | null) ?? [];

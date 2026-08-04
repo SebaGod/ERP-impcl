@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ArrowLeft, Plus } from "lucide-react";
 import { requireAgencyContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { exigirLectura } from "@/lib/lectura";
 import { buttonClasses } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CreateSnapshotForm } from "../snapshot-forms";
@@ -13,11 +14,13 @@ export default async function NuevaPlantillaPage() {
   const session = await requireAgencyContext();
   const supabase = await createClient();
 
-  const { data } = await supabase
+  const origenRes = await supabase
     .from("organizations")
     .select("id, name")
     .eq("agency_id", session.agency.id)
     .order("name");
+
+  const data = exigirLectura(origenRes, "las subcuentas de origen");
 
   const orgs = (data as { id: string; name: string }[] | null) ?? [];
 

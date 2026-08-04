@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { requireAdminContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { exigirLectura } from "@/lib/lectura";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { buttonClasses } from "@/components/ui/button";
 import { WorkOrderForm } from "../work-order-form";
@@ -14,7 +15,7 @@ export default async function NuevaOrdenPage() {
   const session = await requireAdminContext();
   const supabase = await createClient();
 
-  const [{ data: clients }, { data: stages }, { data: members }] =
+  const [clientsRes, stagesRes, membersRes] =
     await Promise.all([
       supabase
         .from("contacts")
@@ -31,6 +32,13 @@ export default async function NuevaOrdenPage() {
         .select("user_id, profiles (full_name)")
         .eq("org_id", session.org.id),
     ]);
+
+  // La lista vacía dispara abajo "primero necesitas un cliente". Si el
+  // vacío viene de una consulta caída, eso empuja a crear de nuevo un
+  // cliente que ya existe, y quedan dos fichas del mismo.
+  const clients = exigirLectura(clientsRes, "los clientes");
+  const stages = exigirLectura(stagesRes, "las etapas");
+  const members = exigirLectura(membersRes, "el equipo");
 
   if ((clients ?? []).length === 0) {
     return (

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { requireAgencyContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { exigirLectura } from "@/lib/lectura";
 import { Card, CardContent } from "@/components/ui/card";
 import { NewSubaccountForm } from "./new-subaccount-form";
 
@@ -18,11 +19,13 @@ export default async function NuevaSubcuentaPage() {
   const session = await requireAgencyContext();
   const supabase = await createClient();
 
-  const { data } = await supabase
+  const datosRes = await supabase
     .from("agency_snapshots")
     .select("id, name, description")
     .eq("agency_id", session.agency.id)
     .order("created_at", { ascending: false });
+
+  const data = exigirLectura(datosRes, "los datos de la agencia");
 
   const snapshots = (data as SnapshotOption[] | null) ?? [];
 

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import { requireOrgContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { exigirLectura } from "@/lib/lectura";
 import { formatFechaHora, hoyISO } from "@/lib/locale";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { buttonClasses } from "@/components/ui/button";
@@ -93,7 +94,7 @@ export default async function CalendarioPage({
   const desde = new Date(Date.UTC(anio, numero - 1, 1) - DIA_MS).toISOString();
   const hasta = new Date(Date.UTC(anio, numero, 1) + DIA_MS).toISOString();
 
-  const [{ data: delRango }, { data: proximasRaw }] = await Promise.all([
+  const [delRangoRes, proximasRes] = await Promise.all([
     supabase
       .from("appointments")
       .select(CAMPOS)
@@ -109,6 +110,11 @@ export default async function CalendarioPage({
       .order("starts_at")
       .limit(5),
   ]);
+
+  // Una agenda vacía por una consulta caída se lee como "hoy no
+  // tienes nada", y quien la lee no se presenta a la reunión.
+  const delRango = exigirLectura(delRangoRes, "las citas del mes");
+  const proximasRaw = exigirLectura(proximasRes, "las próximas citas");
 
   const filas = (delRango ?? []) as unknown as FilaCita[];
   const citas = filas

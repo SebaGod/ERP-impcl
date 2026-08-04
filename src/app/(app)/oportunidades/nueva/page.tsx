@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { requireOrgContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { exigirLectura } from "@/lib/lectura";
 import { ensureDefaultPipeline } from "@/lib/crm/pipeline";
 import { buttonClasses } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,13 +17,19 @@ export default async function NuevaOportunidadPage() {
 
   // Solo se necesita saber SI hay contactos, no cargarlos: la elección se
   // hace con un buscador que consulta al servidor.
-  const [{ count }, pipeline] = await Promise.all([
+  const [contactosRes, pipeline] = await Promise.all([
     supabase
       .from("contacts")
       .select("id", { count: "exact", head: true })
       .eq("org_id", session.org.id),
     ensureDefaultPipeline(supabase, session.org.id),
   ]);
+
+  // El conteo caído vuelve como null y abajo se lee igual que cero,
+  // así que la pantalla manda a crear un contacto a quien ya tiene
+  // toda su agenda cargada.
+  exigirLectura(contactosRes, "los contactos");
+  const count = contactosRes.count;
 
   if ((count ?? 0) === 0) {
     return (

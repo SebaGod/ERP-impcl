@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { requireAdminContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { exigirLectura } from "@/lib/lectura";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { CategoryForm, DeleteCategoryButton } from "./category-controls";
 
@@ -20,11 +21,13 @@ export default async function CategoriasPage() {
   const session = await requireAdminContext();
   const supabase = await createClient();
 
-  const { data: categories } = await supabase
+  const categoriesRes = await supabase
     .from("finance_categories")
     .select("id, name, kind")
     .eq("org_id", session.org.id)
     .order("name");
+
+  const categories = exigirLectura(categoriesRes, "las categorías");
 
   const byKind = (kind: string) =>
     (categories ?? []).filter((c) => c.kind === kind);

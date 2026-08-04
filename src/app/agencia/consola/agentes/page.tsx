@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Bot, Building2, Sparkles, Zap } from "lucide-react";
 import { requireAgencyContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { exigirLectura } from "@/lib/lectura";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { buttonClasses } from "@/components/ui/button";
@@ -72,11 +73,15 @@ export default async function ConsolaAgentesPage({
   const session = await requireAgencyContext();
   const supabase = await createClient();
 
-  const { data: orgsData } = await supabase
+  const orgsRes = await supabase
     .from("organizations")
     .select("id, name, status")
     .eq("agency_id", session.agency.id)
     .order("name");
+
+  // Con la consulta caída la pantalla anuncia "todavía no tienes
+  // subcuentas" a alguien que tiene una cartera entera.
+  const orgsData = exigirLectura(orgsRes, "las subcuentas");
 
   const subcuentas = (orgsData ?? []) as SubcuentaFila[];
 

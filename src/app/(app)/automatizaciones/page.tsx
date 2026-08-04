@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Activity, Plus, Workflow, Zap } from "lucide-react";
 import { requireOrgContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { exigirLectura } from "@/lib/lectura";
 import { formatFechaHora } from "@/lib/locale";
 import { buttonClasses } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -77,7 +78,7 @@ export default async function AutomatizacionesPage() {
   const region = session.org.region;
   const supabase = await createClient();
 
-  const [{ data: automations }, { data: runs }] = await Promise.all([
+  const [automationsRes, runsRes] = await Promise.all([
     supabase
       .from("automations")
       .select(
@@ -92,6 +93,11 @@ export default async function AutomatizacionesPage() {
       .order("created_at", { ascending: false })
       .limit(20),
   ]);
+
+  // Con la consulta caída la pantalla dice que no hay reglas
+  // configuradas, y lo que sigue es volver a crear las que ya existen.
+  const automations = exigirLectura(automationsRes, "las automatizaciones");
+  const runs = exigirLectura(runsRes, "las últimas ejecuciones");
 
   const reglas = (automations ?? []) as AutomationRow[];
   const ejecuciones = (runs ?? []) as RunRow[];

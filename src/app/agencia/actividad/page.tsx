@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { requireAgencyContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { exigirLectura } from "@/lib/lectura";
 import { formatFecha, formatFechaHora } from "@/lib/locale";
 import { Card, CardContent } from "@/components/ui/card";
 import { statusLabels } from "@/lib/agency/types";
@@ -116,6 +117,12 @@ export default async function ActividadPage() {
       .eq("agency_id", session.agency.id)
       .order("name"),
   ]);
+
+  // Una bitácora de actividad vacía por un fallo se lee como "no pasó
+  // nada", que es justo lo contrario de lo que esta pantalla existe
+  // para responder.
+  exigirLectura(eventsResult, "la actividad de la cartera");
+  exigirLectura(orgsResult, "las subcuentas");
 
   const events = (eventsResult.data as EventRow[] | null) ?? [];
   const orgs = (orgsResult.data as { id: string; name: string }[] | null) ?? [];

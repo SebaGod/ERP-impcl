@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { requireAdminContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { exigirLectura } from "@/lib/lectura";
 import { formatFecha } from "@/lib/locale";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,7 +25,7 @@ export default async function EquipoPage() {
   const region = session.org.region;
   const supabase = await createClient();
 
-  const [{ data: members }, { data: invitations }, { data: perfiles }] =
+  const [membersRes, invitationsRes, perfilesRes] =
     await Promise.all([
       supabase
         .from("organization_members")
@@ -43,6 +44,12 @@ export default async function EquipoPage() {
         .eq("org_id", session.org.id)
         .order("label"),
     ]);
+
+  // Un equipo que se dibuja vacío por un fallo sugiere que se perdieron
+  // los accesos de todos, que es alarmante y falso.
+  const members = exigirLectura(membersRes, "el equipo");
+  const invitations = exigirLectura(invitationsRes, "las invitaciones pendientes");
+  const perfiles = exigirLectura(perfilesRes, "los perfiles");
 
   const perfilesRows = (perfiles ?? []) as PerfilRow[];
 

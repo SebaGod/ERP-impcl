@@ -171,6 +171,53 @@ describe("un 404 nunca sale de una consulta caída", () => {
   }
 });
 
+describe("ninguna consulta se cae en silencio", () => {
+  /**
+   * Páginas que delegan sus consultas a un módulo aparte.
+   *
+   * No es una excepción a la regla: es la misma regla comprobada en el
+   * archivo donde vive la consulta. `getReceivables` y `origen.ts` sí
+   * usan exigirLectura, y en el caso de las cuentas por cobrar es donde
+   * más falta hacía —un fallo ahí no vacía la lista, la infla, porque
+   * sin los pagos leídos todos los clientes aparecen debiendo el total.
+   */
+  const DELEGAN = new Set([
+    "(app)/finanzas/por-cobrar",
+    "(app)/documentos/nuevo",
+  ]);
+
+  const consultan = TODOS.filter((dir) => {
+    const page = join(dir, "page.tsx");
+    return existsSync(page) && readFileSync(page, "utf8").includes("supabase");
+  });
+
+  it("hay bastantes páginas consultando (si no, este bloque no mide nada)", () => {
+    expect(consultan.length).toBeGreaterThan(40);
+  });
+
+  for (const dir of consultan) {
+    const nombre = rel(dir);
+    if (DELEGAN.has(nombre)) continue;
+    it(`${nombre} mira si la consulta falló`, () => {
+      const fuente = readFileSync(join(dir, "page.tsx"), "utf8");
+      // Desestructurar solo `data` deja el error en el suelo, y el
+      // resultado es una pantalla que se ve sana: una lista vacía en vez
+      // de una lista rota, un total en cero en vez de un total ausente.
+      // Es peor que un error a la vista porque nadie lo reporta —quien
+      // la mira concluye que no tiene datos y sigue trabajando con eso.
+      const mira =
+        fuente.includes("exigirLectura") ||
+        fuente.includes("QueryError") ||
+        fuente.includes(".error") ||
+        // La otra forma válida: desestructurar el error junto al dato y
+        // decidir en la pantalla qué hacer con él, como hacen canales y
+        // subcuentas. Lo que no vale es `{ data: x }` a secas.
+        /\{\s*data\s*,\s*error\s*\}/.test(fuente);
+      expect(mira).toBe(true);
+    });
+  }
+});
+
 describe("los boundaries usan la API de esta versión de Next", () => {
   const boundaries = TODOS.flatMap((dir) => {
     const salida: string[] = [];
