@@ -138,11 +138,21 @@ export interface TotalesLibro {
   anulado: number;
 }
 
+/**
+ * El signo con que un documento entra al libro.
+ *
+ * La nota de crédito (61) resta; la de débito (56) y el resto suman. Vive
+ * acá y no repetido en cada pantalla: el día que el SII agregue otro
+ * documento que reste, se cambia en un solo lugar.
+ */
+export function signoLibro(tipo: CodigoDte): 1 | -1 {
+  return tipo === 61 ? -1 : 1;
+}
+
 export function totalesLibro(resumen: ResumenTipo[]): TotalesLibro {
   return resumen.reduce<TotalesLibro>(
     (acc, r) => {
-      // 61 nota de crédito resta, 56 nota de débito suma
-      const signo = r.tipo === 61 ? -1 : 1;
+      const signo = signoLibro(r.tipo);
       return {
         neto: acc.neto + signo * r.neto,
         exento: acc.exento + signo * r.exento,
@@ -154,4 +164,117 @@ export function totalesLibro(resumen: ResumenTipo[]): TotalesLibro {
     },
     { neto: 0, exento: 0, iva: 0, total: 0, documentos: 0, anulado: 0 }
   );
+}
+
+// ---------------------------------------------------------------
+// Detalle del libro, documento por documento
+// ---------------------------------------------------------------
+
+export interface FilaLibro {
+  id: string;
+  fecha_emision: string;
+  tipo: CodigoDte;
+  folio: number | null;
+  estado: EstadoDte;
+  receptor_rut: string | null;
+  receptor_razon_social: string | null;
+  neto: number;
+  exento: number;
+  iva: number;
+  total: number;
+  ref_tipo: CodigoDte | null;
+  ref_folio: number | null;
+}
+
+/** Una página del detalle. `total` es el del mes completo, no el de la página. */
+export async function paginaLibro(
+  supabase: SupabaseClient,
+  orgId: string,
+  desde: string,
+  hasta: string,
+  limite = 1000,
+  offset = 0
+): Promise<{ filas: FilaLibro[]; total: number }> {
+  const { data, error } = await supabase.rpc("dte_libro_detalle", {
+    p_org: orgId,
+    p_desde: desde,
+    p_hasta: hasta,
+    p_limit: limite,
+    p_offset: offset,
+  });
+  if (error) {
+    throw new Error(`No se pudo leer el detalle del libro: ${error.message}`);
+  }
+
+  const crudas = (data as (FilaLibro & { total_filas: number })[] | null) ?? [];
+  return {
+    filas: crudas.map((f) => ({
+      id: f.id,
+      fecha_emision: f.fecha_emision,
+      tipo: f.tipo,
+      folio: f.folio,
+      estado: f.estado,
+      receptor_rut: f.receptor_rut,
+      receptor_razon_social: f.receptor_razon_social,
+      neto: Number(f.neto),
+      exento: Number(f.exento),
+      iva: Number(f.iva),
+      total: Number(f.total),
+      ref_tipo: f.ref_tipo,
+      ref_folio: f.ref_folio,
+    })),
+    total: crudas.length > 0 ? Number(crudas[0]!.total_filas) : 0,
+  };
+}
+
+/**
+ * El mes completo, página por página.
+ *
+ * Un libro incompleto se declara igual —con menos ventas de las que
+ * hubo—, así que acá no hay corte silencioso: se recorre hasta traer
+ * todas las filas que la propia consulta dice que existen, y si algo se
+ * cae, se propaga el error en vez de devolver medio archivo.
+ *
+ * El tope de vueltas no es un límite de negocio: es un seguro contra un
+ * bucle infinito si una página volviera vacía con total > 0. Al pasarlo,
+ * revienta; nunca devuelve un libro corto haciéndolo pasar por completo.
+ */
+export async function libroCompleto(
+  supabase: SupabaseClient,
+  orgId: string,
+  desde: string,
+  hasta: string,
+  porPagina = 1000
+): Promise<FilaLibro[]> {
+  const acumulado: FilaLibro[] = [];
+  let total = 0;
+  let vueltas = 0;
+
+  do {
+    const pagina = await paginaLibro(
+      supabase,
+      orgId,
+      desde,
+      hasta,
+      porPagina,
+      acumulado.length
+    );
+    total = pagina.total;
+    if (pagina.filas.length === 0) break;
+    acumulado.push(...pagina.filas);
+
+    if (++vueltas > 1000) {
+      throw new Error(
+        `El libro de ${desde} devolvió más páginas de las esperadas (${acumulado.length} de ${total} filas)`
+      );
+    }
+  } while (acumulado.length < total);
+
+  if (acumulado.length < total) {
+    throw new Error(
+      `El libro de ${desde} quedó incompleto: ${acumulado.length} de ${total} documentos`
+    );
+  }
+
+  return acumulado;
 }

@@ -16,6 +16,7 @@ export type ModuleKey =
   | "oportunidades"
   | "calendario"
   | "cotizaciones"
+  | "documentos"
   | "tablero"
   | "finanzas"
   | "insumos"
@@ -84,6 +85,13 @@ export const modules: ModuleDef[] = [
     href: "/cotizaciones",
     group: "comercial",
     description: "Cotizaciones y su aprobación",
+  },
+  {
+    key: "documentos",
+    label: "Boletas y facturas",
+    href: "/documentos",
+    group: "operacion",
+    description: "Registro de documentos tributarios y libro de ventas",
   },
   {
     key: "tablero",
@@ -174,7 +182,7 @@ export const PERFILES_SUGERIDOS: {
     label: "Contador",
     description: "Ve finanzas y cotizaciones, sin acceso al resto del CRM.",
     base_role: "operario",
-    permissions: ["dashboard", "finanzas", "cotizaciones"],
+    permissions: ["dashboard", "finanzas", "cotizaciones", "documentos"],
   },
   {
     key: "produccion",
