@@ -5,15 +5,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
+import { ContactPicker } from "@/components/contact-picker";
 import { createOpportunity, type ActionState } from "../actions";
 
 const initialState: ActionState = { error: null };
 
 export function NewOpportunityForm({
-  contacts,
   stages,
 }: {
-  contacts: { id: string; name: string }[];
   stages: { id: string; name: string }[];
 }) {
   const [state, formAction, pending] = useActionState(
@@ -24,15 +23,10 @@ export function NewOpportunityForm({
   return (
     <form action={formAction} className="flex flex-col gap-4">
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="op-contact">Contacto *</Label>
-        <Select id="op-contact" name="contact_id" defaultValue="" required>
-          <option value="">Selecciona…</option>
-          {contacts.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </Select>
+        <Label>Contacto *</Label>
+        {/* Búsqueda en el servidor: un select con la tabla completa serían
+            decenas de miles de <option> en un CRM real. */}
+        <ContactPicker name="contact_id" />
       </div>
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="op-title">Título *</Label>

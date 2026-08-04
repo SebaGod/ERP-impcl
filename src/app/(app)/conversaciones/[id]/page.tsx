@@ -41,12 +41,18 @@ export default async function ConversacionDetallePage({
     score: number;
   };
 
-  const [{ data: messages }, { data: agents }] = await Promise.all([
+  // Los ÚLTIMOS 200 y no el hilo entero: una conversación de WhatsApp de
+  // meses acumula miles de mensajes y el hilo se lee desde el final. Se
+  // piden en orden descendente (para que el tope corte lo viejo, no lo
+  // nuevo) y se invierten para pintar en orden cronológico.
+  const MENSAJES_MAX = 200;
+  const [{ data: messagesDesc }, { data: agents }] = await Promise.all([
     supabase
       .from("messages")
       .select("id, sender, body, created_at")
       .eq("conversation_id", id)
-      .order("created_at", { ascending: true }),
+      .order("created_at", { ascending: false })
+      .limit(MENSAJES_MAX),
     supabase
       .from("ai_agents")
       .select("id, name")
@@ -54,6 +60,8 @@ export default async function ConversacionDetallePage({
       .eq("is_active", true)
       .order("name"),
   ]);
+  const messages = (messagesDesc ?? []).slice().reverse();
+  const hiloRecortado = (messagesDesc ?? []).length === MENSAJES_MAX;
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-4">
@@ -119,6 +127,14 @@ export default async function ConversacionDetallePage({
                   </div>
                 );
               })}
+              {hiloRecortado && (
+                // Con flex-col-reverse, el último hijo del DOM se pinta
+                // arriba: este aviso queda donde termina lo visible.
+                <p className="m-auto pb-2 text-center text-xs text-muted-foreground">
+                  Se muestran los últimos {MENSAJES_MAX} mensajes; los
+                  anteriores quedan guardados.
+                </p>
+              )}
               {(messages ?? []).length === 0 && (
                 <p className="m-auto text-sm text-muted-foreground">
                   Sin mensajes todavía.

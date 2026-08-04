@@ -4,16 +4,13 @@ import { useActionState } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
+import { ContactPicker } from "@/components/contact-picker";
 import { createConversation, type ActionState } from "../actions";
 import { channelLabels } from "../channels";
 
 const initialState: ActionState = { error: null };
 
-export function NewConversationForm({
-  contacts,
-}: {
-  contacts: { id: string; name: string }[];
-}) {
+export function NewConversationForm() {
   const [state, formAction, pending] = useActionState(
     createConversation,
     initialState
@@ -22,15 +19,10 @@ export function NewConversationForm({
   return (
     <form action={formAction} className="flex flex-col gap-4">
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="cv-contact">Contacto *</Label>
-        <Select id="cv-contact" name="contact_id" defaultValue="" required>
-          <option value="">Selecciona…</option>
-          {contacts.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </Select>
+        <Label>Contacto *</Label>
+        {/* Búsqueda en el servidor: un select con la tabla completa serían
+            decenas de miles de <option> en un CRM real. */}
+        <ContactPicker name="contact_id" />
       </div>
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="cv-channel">Canal</Label>

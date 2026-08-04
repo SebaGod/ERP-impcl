@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { requireOrgContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { formatCLP, formatDateTime, todayISO } from "@/lib/format";
+import { formatCLP, formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import {
   Card,
@@ -12,6 +12,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { QueryError } from "@/components/query-error";
 import { channelLabels } from "@/app/(app)/conversaciones/channels";
 import { BarChart, DonutChart, HBarChart, chartPalette } from "@/components/charts";
 
@@ -52,17 +53,6 @@ function rel<T>(value: unknown): T | null {
   return (Array.isArray(value) ? value[0] : value) as T | null;
 }
 
-/** Límites del rango: ISO para timestamptz y "aaaa-mm-dd" para columnas date */
-function limitesDelRango(dias: number): {
-  desdeIso: string;
-  desdeDia: string;
-  ahoraIso: string;
-} {
-  const ahora = new Date();
-  const desdeIso = new Date(ahora.getTime() - dias * 86_400_000).toISOString();
-  return { desdeIso, desdeDia: desdeIso.slice(0, 10), ahoraIso: ahora.toISOString() };
-}
-
 function etiquetaCanal(key: string): string {
   return (
     (channelLabels as Record<string, string>)[key] ??
@@ -70,16 +60,54 @@ function etiquetaCanal(key: string): string {
   );
 }
 
-interface Opp {
-  id: string;
-  title: string;
-  value: number;
-  status: string;
-  stage_id: string;
-  created_at: string;
-  contactName: string | null;
-  ownerName: string | null;
+/** Conteos grandes con separador de miles chileno (29.616, no 29616) */
+function formatEntero(n: number): string {
+  return n.toLocaleString("es-CL");
 }
+
+/**
+ * Forma del jsonb que devuelve la RPC dashboard_resumen (migración
+ * 20260804110000_dashboard_aggregates). Todos los números vienen ya
+ * agregados desde Postgres: antes la página traía las tablas del rango
+ * completas y sumaba en JS, y con volumen real PostgREST corta cada
+ * respuesta en 1.000 filas SIN error, así que los gráficos mentían.
+ */
+interface DashboardResumen {
+  ingresos: number;
+  gastos: number;
+  finanzas_por_mes: { mes: string; ingreso: number; gasto: number }[];
+  pipeline_abierto: { cantidad: number; valor: number };
+  conversaciones: { abiertas: number; total: number };
+  contactos_nuevos: number;
+  leads_por_vendedor: { nombre: string | null; cantidad: number }[];
+  origen_contactos: { origen: string | null; cantidad: number }[];
+  origen_conversaciones: { canal: string; cantidad: number }[];
+  pedidos_por_etapa: {
+    nombre: string;
+    color: string;
+    cantidad: number;
+    monto: number;
+  }[];
+  cotizaciones: { estado: string; cantidad: number; monto: number }[];
+}
+
+/**
+ * Con la RPC caída se dibuja todo en cero, pero NUNCA en silencio: el
+ * QueryError de arriba declara que lo que se ve está incompleto.
+ */
+const RESUMEN_VACIO: DashboardResumen = {
+  ingresos: 0,
+  gastos: 0,
+  finanzas_por_mes: [],
+  pipeline_abierto: { cantidad: 0, valor: 0 },
+  conversaciones: { abiertas: 0, total: 0 },
+  contactos_nuevos: 0,
+  leads_por_vendedor: [],
+  origen_contactos: [],
+  origen_conversaciones: [],
+  pedidos_por_etapa: [],
+  cotizaciones: [],
+};
 
 export default async function DashboardPage({
   searchParams,
@@ -93,203 +121,102 @@ export default async function DashboardPage({
   const rangoKey: RangoKey =
     rango === "90" || rango === "365" ? rango : "30";
   const dias = Number(rangoKey);
-  const { desdeIso, desdeDia, ahoraIso } = limitesDelRango(dias);
   const orgId = session.org.id;
 
-  const oppSelectBase =
-    "id, title, value, status, stage_id, owner_id, created_at, contacts (name)";
+  // El mismo borde de rango que calcula la RPC, para que las listas
+  // cortas de abajo cuenten lo mismo que los agregados.
+  const ahora = new Date();
+  const desdeIso = new Date(ahora.getTime() - dias * 86_400_000).toISOString();
+  const ahoraIso = ahora.toISOString();
 
-  const [
-    { data: txns },
-    oppsRes,
-    { data: convs },
-    { data: contacts },
-    { data: workOrders },
-    { data: quotes },
-    { data: citas },
-    { data: woStages },
-    { data: pipeStages },
-    { data: integraciones },
-  ] = await Promise.all([
-    supabase
-      .from("transactions")
-      .select("type, amount, txn_date")
-      .eq("org_id", orgId)
-      .gte("txn_date", desdeDia),
-    supabase
-      .from("opportunities")
-      .select(`${oppSelectBase}, profiles!opportunities_owner_id_fkey (full_name)`)
-      .eq("org_id", orgId)
-      .gte("created_at", desdeIso)
-      .order("created_at", { ascending: false }),
-    supabase
-      .from("conversations")
-      .select("id, channel, status, created_at")
-      .eq("org_id", orgId)
-      .gte("created_at", desdeIso),
-    supabase
-      .from("contacts")
-      .select("id, source, created_at")
-      .eq("org_id", orgId)
-      .gte("created_at", desdeIso),
-    supabase
-      .from("work_orders")
-      .select("id, stage_id, amount_net, created_at, completed_at")
-      .eq("org_id", orgId)
-      .gte("created_at", desdeIso),
-    supabase
-      .from("quotes")
-      .select("status, gross_total, issue_date")
-      .eq("org_id", orgId)
-      .gte("issue_date", desdeDia),
-    supabase
-      .from("appointments")
-      .select("id, title, starts_at, status, contacts (name)")
-      .eq("org_id", orgId)
-      .gte("starts_at", ahoraIso)
-      .neq("status", "cancelada")
-      .order("starts_at", { ascending: true })
-      .limit(5),
-    supabase
-      .from("work_order_stages")
-      .select("id, name, color, position")
-      .eq("org_id", orgId)
-      .order("position", { ascending: true }),
-    supabase
-      .from("pipeline_stages")
-      .select("id, name, color")
-      .eq("org_id", orgId),
-    supabase
-      .from("integrations")
-      .select("provider, display_name, status, last_event_at")
-      .eq("org_id", orgId)
-      .eq("status", "activa"),
-  ]);
-
-  // Oportunidades: si el join directo a profiles falla, se resuelve el
-  // nombre del dueño con una carga de miembros de la organización.
-  let opps: Opp[];
-  if (oppsRes.error) {
-    const [{ data: planas }, { data: miembros }] = await Promise.all([
+  const [resumenRes, citasRes, ultimasRes, integracionesRes] =
+    await Promise.all([
+      // Un solo jsonb con todos los agregados, calculado en Postgres
+      supabase.rpc("dashboard_resumen", { p_org: orgId, p_dias: dias }),
+      // Las listas cortas siguen como selects directos, SIEMPRE con
+      // límite explícito: sin él PostgREST corta en 1.000 sin avisar.
+      supabase
+        .from("appointments")
+        .select("id, title, starts_at, contacts (name)")
+        .eq("org_id", orgId)
+        .gte("starts_at", ahoraIso)
+        .neq("status", "cancelada")
+        .order("starts_at", { ascending: true })
+        .limit(5),
       supabase
         .from("opportunities")
-        .select(oppSelectBase)
+        .select(
+          "id, title, value, status, created_at, contacts (name), pipeline_stages (name, color)"
+        )
         .eq("org_id", orgId)
         .gte("created_at", desdeIso)
-        .order("created_at", { ascending: false }),
+        .order("created_at", { ascending: false })
+        .limit(6),
       supabase
-        .from("organization_members")
-        .select("user_id, profiles (full_name)")
-        .eq("org_id", orgId),
+        .from("integrations")
+        .select("provider, display_name")
+        .eq("org_id", orgId)
+        .eq("status", "activa")
+        .limit(20),
     ]);
-    const nombres = new Map<string, string>();
-    for (const m of miembros ?? []) {
-      const perfil = rel<{ full_name: string }>(m.profiles);
-      if (perfil?.full_name) nombres.set(m.user_id as string, perfil.full_name);
-    }
-    opps = (planas ?? []).map((o) => ({
-      id: o.id as string,
-      title: o.title as string,
-      value: o.value as number,
-      status: o.status as string,
-      stage_id: o.stage_id as string,
-      created_at: o.created_at as string,
-      contactName: rel<{ name: string }>(o.contacts)?.name ?? null,
-      ownerName: o.owner_id ? nombres.get(o.owner_id as string) ?? null : null,
-    }));
-  } else {
-    opps = (oppsRes.data ?? []).map((o) => ({
-      id: o.id as string,
-      title: o.title as string,
-      value: o.value as number,
-      status: o.status as string,
-      stage_id: o.stage_id as string,
-      created_at: o.created_at as string,
-      contactName: rel<{ name: string }>(o.contacts)?.name ?? null,
-      ownerName: rel<{ full_name: string }>(o.profiles)?.full_name ?? null,
-    }));
+
+  // Consulta caída ≠ "no hay datos": lo que falló se declara arriba y
+  // las tarjetas afectadas lo dicen, en vez de fingir ceros sanos.
+  const partesCaidas: string[] = [];
+  const resumenData = (resumenRes.data as DashboardResumen | null) ?? null;
+  if (resumenRes.error || resumenData === null) {
+    partesCaidas.push("el resumen del dashboard");
   }
+  if (citasRes.error) partesCaidas.push("las próximas citas");
+  if (ultimasRes.error) partesCaidas.push("la actividad del embudo");
+  if (integracionesRes.error) partesCaidas.push("los canales conectados");
+
+  const resumen = resumenData ?? RESUMEN_VACIO;
 
   // ----- KPIs -----
-  const ingresos = (txns ?? [])
-    .filter((t) => t.type === "ingreso")
-    .reduce((s, t) => s + (t.amount as number), 0);
-  const gastos = (txns ?? [])
-    .filter((t) => t.type === "egreso")
-    .reduce((s, t) => s + (t.amount as number), 0);
-  const balance = ingresos - gastos;
+  const balance = resumen.ingresos - resumen.gastos;
+  const { cantidad: oppsAbiertas, valor: valorPipeline } =
+    resumen.pipeline_abierto;
 
-  const oppsAbiertas = opps.filter((o) => o.status === "abierta");
-  const valorPipeline = oppsAbiertas.reduce((s, o) => s + o.value, 0);
-  const convsAbiertas = (convs ?? []).filter(
-    (c) => c.status === "abierta"
-  ).length;
-  const contactosNuevos = (contacts ?? []).length;
-
-  // ----- Finanzas por mes -----
-  const porMes = new Map<string, { ingreso: number; gasto: number }>();
-  for (const t of txns ?? []) {
-    const key = (t.txn_date as string).slice(0, 7);
-    const fila = porMes.get(key) ?? { ingreso: 0, gasto: 0 };
-    if (t.type === "ingreso") fila.ingreso += t.amount as number;
-    else fila.gasto += t.amount as number;
-    porMes.set(key, fila);
-  }
-  const meses: string[] = [];
-  {
-    let [y, m] = desdeDia.split("-").map(Number);
-    const [ty, tm] = todayISO().split("-").map(Number);
-    while (y < ty || (y === ty && m <= tm)) {
-      meses.push(`${y}-${String(m).padStart(2, "0")}`);
-      if (m === 12) {
-        y += 1;
-        m = 1;
-      } else {
-        m += 1;
-      }
+  // ----- Finanzas por mes (la serie ya viene completa y en orden) -----
+  const finanzasSeries = resumen.finanzas_por_mes.map(
+    ({ mes, ingreso, gasto }) => {
+      const [y, m] = mes.split("-").map(Number);
+      return {
+        label: `${MESES[m - 1]} ${String(y).slice(2)}`,
+        values: [
+          { name: "Ingresos", value: ingreso, color: "#059669" },
+          { name: "Gastos", value: gasto, color: "#dc2626" },
+        ],
+      };
     }
-  }
-  const finanzasSeries = meses.map((key) => {
-    const [y, m] = key.split("-").map(Number);
-    const fila = porMes.get(key) ?? { ingreso: 0, gasto: 0 };
-    return {
-      label: `${MESES[m - 1]} ${String(y).slice(2)}`,
-      values: [
-        { name: "Ingresos", value: fila.ingreso, color: "#059669" },
-        { name: "Gastos", value: fila.gasto, color: "#dc2626" },
-      ],
-    };
-  });
+  );
 
-  // ----- Leads por vendedor (oportunidades abiertas por dueño) -----
-  const porVendedor = new Map<string, number>();
-  for (const o of oppsAbiertas) {
-    const nombre = o.ownerName ?? "Sin asignar";
-    porVendedor.set(nombre, (porVendedor.get(nombre) ?? 0) + 1);
-  }
-  const vendedorItems = [...porVendedor.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .map(([label, value], i) => ({
-      label,
-      value,
-      color: chartPalette[i % chartPalette.length],
-    }));
+  // ----- Leads por vendedor (la RPC ya ordena de mayor a menor) -----
+  const vendedorItems = resumen.leads_por_vendedor.map((v, i) => ({
+    label: v.nombre ?? "Sin asignar",
+    value: v.cantidad,
+    color: chartPalette[i % chartPalette.length],
+  }));
 
-  // ----- Origen de los leads (contacts.source + conversations.channel) -----
+  // ----- Origen de los leads -----
+  // La RPC entrega los grupos en crudo (source de contactos y channel de
+  // conversaciones); la etiqueta y la mezcla en un solo gráfico son
+  // presentación, así que viven aquí junto a channelLabels.
   const porOrigen = new Map<string, number>();
-  for (const c of contacts ?? []) {
-    const source = (c.source as string | null) ?? "";
+  for (const fila of resumen.origen_contactos) {
+    const source = fila.origen ?? "";
     const label =
       source === ""
         ? "Sin origen"
         : source === "erp"
           ? "Manual"
           : etiquetaCanal(source);
-    porOrigen.set(label, (porOrigen.get(label) ?? 0) + 1);
+    porOrigen.set(label, (porOrigen.get(label) ?? 0) + fila.cantidad);
   }
-  for (const c of convs ?? []) {
-    const label = etiquetaCanal(c.channel as string);
-    porOrigen.set(label, (porOrigen.get(label) ?? 0) + 1);
+  for (const fila of resumen.origen_conversaciones) {
+    const label = etiquetaCanal(fila.canal);
+    porOrigen.set(label, (porOrigen.get(label) ?? 0) + fila.cantidad);
   }
   const origenItems = [...porOrigen.entries()]
     .sort((a, b) => b[1] - a[1])
@@ -299,61 +226,50 @@ export default async function DashboardPage({
       color: chartPalette[i % chartPalette.length],
     }));
 
-  // ----- Pedidos por etapa -----
-  const woPorEtapa = new Map<string, { count: number; monto: number }>();
-  for (const w of workOrders ?? []) {
-    const fila = woPorEtapa.get(w.stage_id as string) ?? { count: 0, monto: 0 };
-    fila.count += 1;
-    fila.monto += w.amount_net as number;
-    woPorEtapa.set(w.stage_id as string, fila);
-  }
-  const pedidosItems = (woStages ?? []).map((s) => {
-    const fila = woPorEtapa.get(s.id as string) ?? { count: 0, monto: 0 };
-    return {
-      label: s.name as string,
-      value: fila.count,
-      color: s.color as string,
-      hint: `${fila.count} · ${formatCLP(fila.monto)}`,
-    };
-  });
+  // ----- Pedidos por etapa (todas las etapas, aunque estén en cero) -----
+  const pedidosItems = resumen.pedidos_por_etapa.map((e) => ({
+    label: e.nombre,
+    value: e.cantidad,
+    color: e.color,
+    hint: `${e.cantidad} · ${formatCLP(e.monto)}`,
+  }));
 
   // ----- Cotizaciones por estado -----
-  const quotesPorEstado = new Map<string, { count: number; monto: number }>();
-  for (const q of quotes ?? []) {
-    const fila = quotesPorEstado.get(q.status as string) ?? {
-      count: 0,
-      monto: 0,
-    };
-    fila.count += 1;
-    fila.monto += q.gross_total as number;
-    quotesPorEstado.set(q.status as string, fila);
-  }
+  const cotizacionesPorEstado = new Map(
+    resumen.cotizaciones.map((c) => [c.estado, c])
+  );
   const cotizacionesItems = Object.entries(quoteStatusMeta)
-    .filter(([status]) => quotesPorEstado.has(status))
-    .map(([status, meta]) => {
-      const fila = quotesPorEstado.get(status) ?? { count: 0, monto: 0 };
+    .filter(([estado]) => cotizacionesPorEstado.has(estado))
+    .map(([estado, meta]) => {
+      const fila = cotizacionesPorEstado.get(estado) ?? {
+        estado,
+        cantidad: 0,
+        monto: 0,
+      };
       return {
         label: meta.label,
-        value: fila.count,
+        value: fila.cantidad,
         color: meta.color,
-        hint: `${fila.count} · ${formatCLP(fila.monto)}`,
+        hint: `${fila.cantidad} · ${formatCLP(fila.monto)}`,
       };
     });
-  const totalCotizado = (quotes ?? []).reduce(
-    (s, q) => s + (q.gross_total as number),
+  const totalCotizaciones = resumen.cotizaciones.reduce(
+    (s, c) => s + c.cantidad,
     0
   );
+  const totalCotizado = resumen.cotizaciones.reduce((s, c) => s + c.monto, 0);
 
-  // ----- Sección 3 -----
-  const etapaPipeline = new Map<string, { name: string; color: string }>();
-  for (const s of pipeStages ?? []) {
-    etapaPipeline.set(s.id as string, {
-      name: s.name as string,
-      color: s.color as string,
-    });
-  }
-  const ultimasOpps = opps.slice(0, 6);
-  const canalesActivos = (integraciones ?? []).map(
+  // ----- Sección 3: listas cortas -----
+  const citas = citasRes.data ?? [];
+  const ultimasOpps = (ultimasRes.data ?? []).map((o) => ({
+    id: o.id as string,
+    title: o.title as string,
+    value: o.value as number,
+    status: o.status as string,
+    contactName: rel<{ name: string }>(o.contacts)?.name ?? null,
+    etapa: rel<{ name: string; color: string }>(o.pipeline_stages),
+  }));
+  const canalesActivos = (integracionesRes.data ?? []).map(
     (i) => (i.display_name as string | null) ?? etiquetaCanal(i.provider as string)
   );
 
@@ -389,16 +305,18 @@ export default async function DashboardPage({
         </div>
       </div>
 
+      <QueryError partes={partesCaidas} />
+
       {/* Sección 1 · KPIs */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <Kpi
           label="Ingresos del rango"
-          value={formatCLP(ingresos)}
+          value={formatCLP(resumen.ingresos)}
           hint={`Últimos ${rangos[rangoKey]}`}
         />
         <Kpi
           label="Gastos del rango"
-          value={formatCLP(gastos)}
+          value={formatCLP(resumen.gastos)}
           hint={`Últimos ${rangos[rangoKey]}`}
         />
         <Kpi
@@ -410,16 +328,16 @@ export default async function DashboardPage({
         <Kpi
           label="Valor pipeline abierto"
           value={formatCLP(valorPipeline)}
-          hint={`${oppsAbiertas.length} oportunidades`}
+          hint={`${formatEntero(oppsAbiertas)} oportunidades`}
         />
         <Kpi
           label="Conversaciones abiertas"
-          value={String(convsAbiertas)}
-          hint={`${(convs ?? []).length} en el rango`}
+          value={formatEntero(resumen.conversaciones.abiertas)}
+          hint={`${formatEntero(resumen.conversaciones.total)} en el rango`}
         />
         <Kpi
           label="Contactos nuevos"
-          value={String(contactosNuevos)}
+          value={formatEntero(resumen.contactos_nuevos)}
           hint={`Últimos ${rangos[rangoKey]}`}
         />
       </div>
@@ -443,7 +361,7 @@ export default async function DashboardPage({
           <CardContent>
             <DonutChart
               items={vendedorItems}
-              centerLabel={String(oppsAbiertas.length)}
+              centerLabel={formatEntero(oppsAbiertas)}
             />
           </CardContent>
         </Card>
@@ -474,8 +392,8 @@ export default async function DashboardPage({
           <CardHeader>
             <CardTitle>Cotizaciones</CardTitle>
             <CardDescription>
-              {(quotes ?? []).length > 0
-                ? `${(quotes ?? []).length} por ${formatCLP(totalCotizado)} en el rango`
+              {totalCotizaciones > 0
+                ? `${formatEntero(totalCotizaciones)} por ${formatCLP(totalCotizado)} en el rango`
                 : "Distribución por estado"}
             </CardDescription>
           </CardHeader>
@@ -493,13 +411,18 @@ export default async function DashboardPage({
             <CardDescription>Lo que viene en la agenda</CardDescription>
           </CardHeader>
           <CardContent>
-            {(citas ?? []).length === 0 ? (
+            {citasRes.error ? (
+              <p className="text-sm text-muted-foreground">
+                Esta lista no se pudo cargar; el aviso de arriba tiene el
+                detalle.
+              </p>
+            ) : citas.length === 0 ? (
               <p className="text-sm text-muted-foreground">
                 No hay citas agendadas. Crea una desde el calendario.
               </p>
             ) : (
               <div className="flex flex-col divide-y divide-border">
-                {(citas ?? []).map((cita) => (
+                {citas.map((cita) => (
                   <div
                     key={cita.id as string}
                     className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0"
@@ -528,51 +451,53 @@ export default async function DashboardPage({
             <CardDescription>Últimas oportunidades creadas</CardDescription>
           </CardHeader>
           <CardContent>
-            {ultimasOpps.length === 0 ? (
+            {ultimasRes.error ? (
+              <p className="text-sm text-muted-foreground">
+                Esta lista no se pudo cargar; el aviso de arriba tiene el
+                detalle.
+              </p>
+            ) : ultimasOpps.length === 0 ? (
               <p className="text-sm text-muted-foreground">
                 Sin oportunidades en este rango.
               </p>
             ) : (
               <div className="flex flex-col divide-y divide-border">
-                {ultimasOpps.map((o) => {
-                  const etapa = etapaPipeline.get(o.stage_id);
-                  return (
-                    <div
-                      key={o.id}
-                      className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0"
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium">{o.title}</p>
-                        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                          {etapa && (
-                            <span
-                              className="size-2 shrink-0 rounded-full"
-                              style={{ backgroundColor: etapa.color }}
-                            />
-                          )}
-                          <span className="truncate">
-                            {etapa?.name ?? "Sin etapa"}
-                            {o.contactName ? ` · ${o.contactName}` : ""}
-                          </span>
-                        </p>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-2">
-                        {o.status !== "abierta" && (
-                          <Badge
-                            variant={
-                              o.status === "ganada" ? "success" : "destructive"
-                            }
-                          >
-                            {o.status === "ganada" ? "Ganada" : "Perdida"}
-                          </Badge>
+                {ultimasOpps.map((o) => (
+                  <div
+                    key={o.id}
+                    className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">{o.title}</p>
+                      <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        {o.etapa && (
+                          <span
+                            className="size-2 shrink-0 rounded-full"
+                            style={{ backgroundColor: o.etapa.color }}
+                          />
                         )}
-                        <span className="text-sm font-medium tabular-nums">
-                          {formatCLP(o.value)}
+                        <span className="truncate">
+                          {o.etapa?.name ?? "Sin etapa"}
+                          {o.contactName ? ` · ${o.contactName}` : ""}
                         </span>
-                      </div>
+                      </p>
                     </div>
-                  );
-                })}
+                    <div className="flex shrink-0 items-center gap-2">
+                      {o.status !== "abierta" && (
+                        <Badge
+                          variant={
+                            o.status === "ganada" ? "success" : "destructive"
+                          }
+                        >
+                          {o.status === "ganada" ? "Ganada" : "Perdida"}
+                        </Badge>
+                      )}
+                      <span className="text-sm font-medium tabular-nums">
+                        {formatCLP(o.value)}
+                      </span>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </CardContent>

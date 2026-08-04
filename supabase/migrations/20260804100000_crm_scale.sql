@@ -6,7 +6,7 @@
 -- CRM real se rompe dos veces: el navegador no aguanta, y antes de eso
 -- PostgREST corta en 1.000 filas por respuesta, así que el tablero
 -- mostraría una fracción de la cartera SIN NINGÚN ERROR (comprobado
--- contra la base sembrada: pidió 30.128 abiertas, llegaron 1.000).
+-- contra la base sembrada: pidió 29.616 abiertas, llegaron 1.000).
 --
 -- El reemplazo: funciones que paginan, filtran y cuentan en Postgres.
 -- Cada decisión de abajo salió de medir con 40.000 contactos y 35.000

@@ -224,13 +224,38 @@ export async function paginaContactos(
 
   const filas = (data as (FilaContacto & { total: number })[] | null) ?? [];
   return {
-    contactos: filas.map(({ total: _total, ...c }) => ({
-      ...c,
-      tags: c.tags ?? [],
-      custom_fields: c.custom_fields ?? {},
+    contactos: filas.map((fila) => ({
+      id: fila.id,
+      name: fila.name,
+      company: fila.company,
+      email: fila.email,
+      phone: fila.phone,
+      source: fila.source,
+      lifecycle: fila.lifecycle,
+      score: fila.score,
+      tags: fila.tags ?? [],
+      custom_fields: fila.custom_fields ?? {},
+      created_at: fila.created_at,
     })),
     total: filas.length > 0 ? Number(filas[0]!.total) : 0,
   };
+}
+
+/**
+ * Orígenes que existen de verdad entre los contactos de la organización,
+ * con su conteo. Alimenta el filtro sin cargar un solo contacto.
+ */
+export async function origenesContactos(
+  supabase: SupabaseClient,
+  orgId: string
+): Promise<{ source: string; total: number }[]> {
+  const { data, error } = await supabase.rpc("crm_contact_sources", {
+    p_org: orgId,
+  });
+  if (error) return [];
+  return ((data as { source: string; total: number }[] | null) ?? []).map(
+    (s) => ({ source: s.source, total: Number(s.total) })
+  );
 }
 
 // -------------------------------------------------------------

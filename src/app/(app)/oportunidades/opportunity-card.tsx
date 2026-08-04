@@ -18,6 +18,13 @@ export interface OpportunityCardProps {
   value: number;
   prevStageId: string | null;
   nextStageId: string | null;
+  /**
+   * Aviso al padre cuando el servidor confirmó un cambio (mover etapa,
+   * ganar/perder). El refresh solo repinta las primeras páginas que trajo
+   * el servidor; si esta tarjeta venía de un "cargar más", la columna debe
+   * sacarla de su lista local o quedaría fantasma.
+   */
+  alMutar?: (id: string) => void;
 }
 
 export function OpportunityCard({
@@ -28,17 +35,22 @@ export function OpportunityCard({
   value,
   prevStageId,
   nextStageId,
+  alMutar,
 }: OpportunityCardProps) {
   const [isPending, startTransition] = useTransition();
 
   function move(stageId: string) {
     startTransition(async () => {
-      await moveOpportunity(id, stageId);
+      const res = await moveOpportunity(id, stageId);
+      // Solo si el servidor confirmó: si falló, la tarjeta debe seguir
+      // visible donde estaba.
+      if (!res.error) alMutar?.(id);
     });
   }
   function setStatus(status: "ganada" | "perdida") {
     startTransition(async () => {
-      await setOpportunityStatus(id, status);
+      const res = await setOpportunityStatus(id, status);
+      if (!res.error) alMutar?.(id);
     });
   }
 

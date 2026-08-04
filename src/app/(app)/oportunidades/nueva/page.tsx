@@ -14,16 +14,17 @@ export default async function NuevaOportunidadPage() {
   const session = await requireOrgContext();
   const supabase = await createClient();
 
-  const [{ data: contacts }, pipeline] = await Promise.all([
+  // Solo se necesita saber SI hay contactos, no cargarlos: la elección se
+  // hace con un buscador que consulta al servidor.
+  const [{ count }, pipeline] = await Promise.all([
     supabase
       .from("contacts")
-      .select("id, name")
-      .eq("org_id", session.org.id)
-      .order("name"),
+      .select("id", { count: "exact", head: true })
+      .eq("org_id", session.org.id),
     ensureDefaultPipeline(supabase, session.org.id),
   ]);
 
-  if ((contacts ?? []).length === 0) {
+  if ((count ?? 0) === 0) {
     return (
       <div className="mx-auto flex max-w-2xl flex-col items-center gap-4 py-16 text-center">
         <h1 className="text-2xl font-bold">Primero necesitas un contacto</h1>
@@ -51,7 +52,6 @@ export default async function NuevaOportunidadPage() {
         </CardHeader>
         <CardContent>
           <NewOpportunityForm
-            contacts={contacts ?? []}
             stages={pipeline.stages}
           />
         </CardContent>

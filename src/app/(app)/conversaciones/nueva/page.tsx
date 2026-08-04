@@ -13,13 +13,14 @@ export default async function NuevaConversacionPage() {
   const session = await requireOrgContext();
   const supabase = await createClient();
 
-  const { data: contacts } = await supabase
+  // Solo se necesita saber SI hay contactos: la elección se hace con un
+  // buscador que consulta al servidor.
+  const { count } = await supabase
     .from("contacts")
-    .select("id, name")
-    .eq("org_id", session.org.id)
-    .order("name");
+    .select("id", { count: "exact", head: true })
+    .eq("org_id", session.org.id);
 
-  if ((contacts ?? []).length === 0) {
+  if ((count ?? 0) === 0) {
     return (
       <div className="mx-auto flex max-w-2xl flex-col items-center gap-4 py-16 text-center">
         <h1 className="text-2xl font-bold">Primero necesitas un contacto</h1>
@@ -46,7 +47,7 @@ export default async function NuevaConversacionPage() {
           <CardTitle>Nueva conversación</CardTitle>
         </CardHeader>
         <CardContent>
-          <NewConversationForm contacts={contacts ?? []} />
+          <NewConversationForm />
         </CardContent>
       </Card>
     </div>

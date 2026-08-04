@@ -1,8 +1,24 @@
 "use client";
 
+/**
+ * Superficie cliente del tablero de oportunidades.
+ *
+ * Los filtros NO viven en useState: viven en la URL. Este componente solo
+ * reescribe el querystring (router.replace) y el Server Component vuelve a
+ * consultar con esos filtros; así la página es compartible y el navegador
+ * nunca carga las 35.000 oportunidades para filtrarlas en memoria (eso era
+ * lo que reventaba con clientes reales y lo que PostgREST cortaba en 1.000
+ * filas sin avisar).
+ *
+ * Lo único que sí es estado local son las páginas anexadas con "Cargar 25
+ * más": llegan por server action con cursor keyset y se agregan a la
+ * primera página que pintó el servidor.
+ */
+
 import Link from "next/link";
-import { useMemo, useState } from "react";
-import { Search, Target, X } from "lucide-react";
+import { useEffect, useRef, useState, useTransition } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { Loader2, Search, Target, TriangleAlert, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatCLP, formatDate } from "@/lib/format";
 import { Input } from "@/components/ui/input";
@@ -10,21 +26,14 @@ import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { channelLabels } from "@/app/(app)/conversaciones/channels";
 import type { PipelineStage } from "@/lib/crm/pipeline";
+import type {
+  CursorBoard,
+  FiltrosBoard,
+  OrdenBoard,
+  TarjetaBoard,
+} from "@/lib/crm/queries";
 import { OpportunityCard } from "./opportunity-card";
-
-export interface BoardOpp {
-  id: string;
-  title: string;
-  value: number;
-  stage_id: string;
-  contact_id: string;
-  contact_name: string;
-  contact_source: string | null;
-  contact_tags: string[];
-  owner_id: string | null;
-  owner_name: string | null;
-  created_at: string;
-}
+import { cargarMasTarjetas } from "./board-actions";
 
 export interface BoardVendedor {
   id: string;
@@ -37,11 +46,40 @@ export interface BoardEtiqueta {
   color: string | null;
 }
 
-interface BoardFiltersProps {
-  oportunidades: BoardOpp[];
+/** Filtros tal como viven en la URL (valores por defecto incluidos) */
+export interface FiltrosUrl {
+  q: string;
+  vendedor: string;
+  rango: string;
+  canal: string;
+  tags: string[];
+  vista: "tablero" | "lista";
+  /** Orden de las tarjetas dentro de cada columna */
+  orden: OrdenBoard;
+}
+
+/** Lo que el servidor ya trajo de una etapa: primera página + totales REALES */
+export interface ColumnaInicial {
+  etapa: PipelineStage;
+  /** Total real de la etapa con filtros, o null si columnasBoard falló */
+  total: number | null;
+  valor: number | null;
+  tarjetas: TarjetaBoard[];
+  cursor: CursorBoard | null;
+  /** true = la consulta de tarjetas de ESTA etapa falló (no "está vacía") */
+  fallo: boolean;
+}
+
+interface TableroProps {
+  columnas: ColumnaInicial[];
   vendedores: BoardVendedor[];
-  etapas: PipelineStage[];
+  canales: string[];
   etiquetas: BoardEtiqueta[];
+  filtros: FiltrosUrl;
+  /** Mismos filtros ya traducidos para la RPC; `desde` viene congelado del servidor */
+  filtrosBoard: FiltrosBoard;
+  /** Cambia cuando cambian los filtros de datos: remonta el estado de páginas anexadas */
+  claveDatos: string;
 }
 
 const RANGOS = [
@@ -55,112 +93,122 @@ function canalLabel(source: string): string {
   return (channelLabels as Record<string, string>)[source] ?? source;
 }
 
-export function BoardFilters({
-  oportunidades,
+const nf = new Intl.NumberFormat("es-CL");
+
+// El valor de una columna puede ser de miles de millones de pesos; el
+// formato compacto ("$4,5 M") evita que el encabezado desborde la columna.
+// El monto exacto queda disponible en el atributo title.
+const clpCompacto = new Intl.NumberFormat("es-CL", {
+  style: "currency",
+  currency: "CLP",
+  notation: "compact",
+  maximumFractionDigits: 1,
+});
+
+function construirQuery(f: FiltrosUrl): string {
+  // Los valores por defecto se omiten para que la URL limpia siga siendo
+  // /oportunidades y los enlaces compartidos no arrastren ruido.
+  const p = new URLSearchParams();
+  if (f.q.trim()) p.set("q", f.q.trim());
+  if (f.vendedor !== "todos") p.set("vendedor", f.vendedor);
+  if (f.rango !== "todo") p.set("rango", f.rango);
+  if (f.canal !== "todos") p.set("canal", f.canal);
+  if (f.tags.length > 0) p.set("tags", f.tags.join(","));
+  if (f.vista !== "tablero") p.set("vista", f.vista);
+  if (f.orden !== "reciente") p.set("orden", f.orden);
+  const qs = p.toString();
+  return qs ? `?${qs}` : "";
+}
+
+export function TableroOportunidades({
+  columnas,
   vendedores,
-  etapas,
+  canales,
   etiquetas,
-}: BoardFiltersProps) {
-  const [q, setQ] = useState("");
-  const [vendedor, setVendedor] = useState("todos");
-  const [rango, setRango] = useState("todo");
-  const [cutoff, setCutoff] = useState<number | null>(null);
-  const [canal, setCanal] = useState("todos");
-  const [tags, setTags] = useState<string[]>([]);
-  const [vista, setVista] = useState<"tablero" | "lista">("tablero");
+  filtros,
+  filtrosBoard,
+  claveDatos,
+}: TableroProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const [isPending, startTransition] = useTransition();
 
-  const canales = useMemo(() => {
-    const set = new Set<string>();
-    for (const o of oportunidades) {
-      if (o.contact_source) set.add(o.contact_source);
-    }
-    return [...set].sort((a, b) =>
-      canalLabel(a).localeCompare(canalLabel(b), "es")
-    );
-  }, [oportunidades]);
+  // La búsqueda mantiene estado local SOLO para poder teclear fluido:
+  // la verdad sigue siendo la URL, que se actualiza con debounce.
+  const [busqueda, setBusqueda] = useState(filtros.q);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    },
+    []
+  );
 
-  const tagsPresentes = useMemo(() => {
-    const set = new Set<string>();
-    for (const o of oportunidades) {
-      for (const t of o.contact_tags) set.add(t);
-    }
-    return [...set]
-      .map((key) => {
-        const def = etiquetas.find((e) => e.key === key);
-        return { key, label: def?.label ?? key, color: def?.color ?? null };
-      })
-      .sort((a, b) => a.label.localeCompare(b.label, "es"));
-  }, [oportunidades, etiquetas]);
-
-  const filtradas = useMemo(() => {
-    const texto = q.trim().toLowerCase();
-    return oportunidades.filter((o) => {
-      if (
-        texto &&
-        !o.title.toLowerCase().includes(texto) &&
-        !o.contact_name.toLowerCase().includes(texto)
-      ) {
-        return false;
-      }
-      if (vendedor === "sin" && o.owner_id !== null) return false;
-      if (vendedor !== "todos" && vendedor !== "sin" && o.owner_id !== vendedor) {
-        return false;
-      }
-      if (cutoff !== null && new Date(o.created_at).getTime() < cutoff) {
-        return false;
-      }
-      if (canal !== "todos" && o.contact_source !== canal) return false;
-      if (tags.length > 0 && !tags.some((t) => o.contact_tags.includes(t))) {
-        return false;
-      }
-      return true;
+  function aplicar(patch: Partial<FiltrosUrl>) {
+    const destino = { ...filtros, ...patch };
+    // replace (no push): cada tecleo no debe crear una entrada de historial.
+    startTransition(() => {
+      router.replace(`${pathname}${construirQuery(destino)}`, {
+        scroll: false,
+      });
     });
-  }, [oportunidades, q, vendedor, cutoff, canal, tags]);
-
-  const totalFiltrado = filtradas.reduce((acc, o) => acc + o.value, 0);
-
-  const hayFiltros =
-    q.trim() !== "" ||
-    vendedor !== "todos" ||
-    rango !== "todo" ||
-    canal !== "todos" ||
-    tags.length > 0;
-
-  function limpiar() {
-    setQ("");
-    setVendedor("todos");
-    setRango("todo");
-    setCutoff(null);
-    setCanal("todos");
-    setTags([]);
   }
 
-  function cambiarRango(value: string) {
-    setRango(value);
-    setCutoff(
-      value === "todo" ? null : Date.now() - Number(value) * 86_400_000
-    );
+  function cambiarBusqueda(valor: string) {
+    setBusqueda(valor);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    // ~350 ms: lo justo para no disparar una consulta al servidor por tecla.
+    debounceRef.current = setTimeout(() => aplicar({ q: valor }), 350);
+  }
+
+  function limpiar() {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    setBusqueda("");
+    // La vista (tablero/lista) es preferencia, no filtro: se conserva.
+    aplicar({
+      q: "",
+      vendedor: "todos",
+      rango: "todo",
+      canal: "todos",
+      tags: [],
+      orden: "reciente",
+    });
   }
 
   function toggleTag(key: string) {
-    setTags((prev) =>
-      prev.includes(key) ? prev.filter((t) => t !== key) : [...prev, key]
-    );
+    aplicar({
+      tags: filtros.tags.includes(key)
+        ? filtros.tags.filter((t) => t !== key)
+        : [...filtros.tags, key],
+    });
   }
 
-  const porEtapa = useMemo(() => {
-    const map = new Map<string, BoardOpp[]>();
-    for (const o of filtradas) {
-      const list = map.get(o.stage_id) ?? [];
-      list.push(o);
-      map.set(o.stage_id, list);
-    }
-    return map;
-  }, [filtradas]);
+  const hayFiltros =
+    filtros.q.trim() !== "" ||
+    filtros.vendedor !== "todos" ||
+    filtros.rango !== "todo" ||
+    filtros.canal !== "todos" ||
+    filtros.tags.length > 0;
 
-  const etapaById = useMemo(
-    () => new Map(etapas.map((s) => [s.id, s])),
-    [etapas]
+  // Totales del encabezado: SIEMPRE los del servidor (columnasBoard), nunca
+  // el largo de lo cargado. null = la consulta de conteos falló.
+  const totalesListos = columnas.every((c) => c.total !== null);
+  const totalGeneral = totalesListos
+    ? columnas.reduce((acc, c) => acc + (c.total ?? 0), 0)
+    : null;
+  const valorGeneral = totalesListos
+    ? columnas.reduce((acc, c) => acc + (c.valor ?? 0), 0)
+    : null;
+
+  // Si la URL trae un canal que ya no aparece en el embudo, se ofrece igual
+  // como opción: si no, el select mentiría y no habría forma de quitarlo.
+  const opcionesCanal =
+    filtros.canal !== "todos" && !canales.includes(filtros.canal)
+      ? [filtros.canal, ...canales]
+      : canales;
+
+  const etiquetasOrdenadas = [...etiquetas].sort((a, b) =>
+    a.label.localeCompare(b.label, "es")
   );
 
   return (
@@ -169,21 +217,28 @@ export function BoardFilters({
         <div className="relative">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
+            value={busqueda}
+            onChange={(e) => cambiarBusqueda(e.target.value)}
             placeholder="Buscar título o contacto"
             className="h-9 w-56 pl-8"
             aria-label="Buscar oportunidades"
           />
         </div>
         <Select
-          value={vendedor}
-          onChange={(e) => setVendedor(e.target.value)}
+          value={filtros.vendedor}
+          onChange={(e) => aplicar({ vendedor: e.target.value })}
           className="h-9 w-auto"
           aria-label="Vendedor"
         >
           <option value="todos">Todos los vendedores</option>
           <option value="sin">Sin asignar</option>
+          {/* Un id que ya no está en el equipo (enlace viejo) se muestra
+              igual: si no, el select diría "Todos" mientras filtra por él. */}
+          {filtros.vendedor !== "todos" &&
+            filtros.vendedor !== "sin" &&
+            !vendedores.some((v) => v.id === filtros.vendedor) && (
+              <option value={filtros.vendedor}>Vendedor fuera del equipo</option>
+            )}
           {vendedores.map((v) => (
             <option key={v.id} value={v.id}>
               {v.name}
@@ -191,8 +246,8 @@ export function BoardFilters({
           ))}
         </Select>
         <Select
-          value={rango}
-          onChange={(e) => cambiarRango(e.target.value)}
+          value={filtros.rango}
+          onChange={(e) => aplicar({ rango: e.target.value })}
           className="h-9 w-auto"
           aria-label="Fecha de creación"
         >
@@ -202,15 +257,27 @@ export function BoardFilters({
             </option>
           ))}
         </Select>
-        {canales.length > 0 && (
+        <Select
+          value={filtros.orden}
+          onChange={(e) =>
+            aplicar({ orden: e.target.value as FiltrosUrl["orden"] })
+          }
+          className="h-9 w-auto"
+          aria-label="Ordenar tarjetas"
+        >
+          <option value="reciente">Más nuevas primero</option>
+          <option value="antiguo">Más antiguas primero</option>
+          <option value="valor">Mayor valor primero</option>
+        </Select>
+        {opcionesCanal.length > 0 && (
           <Select
-            value={canal}
-            onChange={(e) => setCanal(e.target.value)}
+            value={filtros.canal}
+            onChange={(e) => aplicar({ canal: e.target.value })}
             className="h-9 w-auto"
             aria-label="Canal de origen"
           >
             <option value="todos">Todos los canales</option>
-            {canales.map((c) => (
+            {opcionesCanal.map((c) => (
               <option key={c} value={c}>
                 {canalLabel(c)}
               </option>
@@ -218,8 +285,10 @@ export function BoardFilters({
           </Select>
         )}
         <Select
-          value={vista}
-          onChange={(e) => setVista(e.target.value as "tablero" | "lista")}
+          value={filtros.vista}
+          onChange={(e) =>
+            aplicar({ vista: e.target.value === "lista" ? "lista" : "tablero" })
+          }
           className="h-9 w-auto"
           aria-label="Vista"
         >
@@ -233,10 +302,10 @@ export function BoardFilters({
         )}
       </div>
 
-      {tagsPresentes.length > 0 && (
+      {etiquetasOrdenadas.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5">
-          {tagsPresentes.map((t) => {
-            const activo = tags.includes(t.key);
+          {etiquetasOrdenadas.map((t) => {
+            const activo = filtros.tags.includes(t.key);
             return (
               <button
                 key={t.key}
@@ -263,158 +332,446 @@ export function BoardFilters({
         </div>
       )}
 
-      <p className="text-xs tabular-nums text-muted-foreground">
-        {filtradas.length} de {oportunidades.length}{" "}
-        {oportunidades.length === 1 ? "oportunidad" : "oportunidades"} ·{" "}
-        {formatCLP(totalFiltrado)} en pipeline
+      <p className="flex items-center gap-2 text-xs tabular-nums text-muted-foreground">
+        {isPending && (
+          <Loader2 className="size-3.5 animate-spin" aria-label="Actualizando" />
+        )}
+        {totalGeneral !== null ? (
+          <span>
+            {nf.format(totalGeneral)}{" "}
+            {totalGeneral === 1 ? "oportunidad" : "oportunidades"} ·{" "}
+            {formatCLP(valorGeneral ?? 0)} en pipeline
+          </span>
+        ) : (
+          // Sin conteos del servidor no se inventa un número con lo cargado.
+          <span>Totales no disponibles</span>
+        )}
       </p>
 
-      {vista === "tablero" ? (
-        <div className="flex flex-1 gap-3 overflow-x-auto pb-4">
-          {etapas.map((stage, index) => {
-            const list = porEtapa.get(stage.id) ?? [];
-            const sum = list.reduce((acc, o) => acc + o.value, 0);
-            const prevStageId = index > 0 ? etapas[index - 1].id : null;
-            const nextStageId =
-              index < etapas.length - 1 ? etapas[index + 1].id : null;
+      {/* La clave remonta este subárbol cuando cambian los filtros de datos:
+          así las páginas anexadas de la consulta anterior no contaminan la
+          nueva. Cambiar de vista NO cambia la clave, para no perderlas. */}
+      <div
+        className={cn(
+          "flex min-h-0 flex-1 flex-col transition-opacity",
+          isPending && "pointer-events-none opacity-60"
+        )}
+      >
+        <ContenidoTablero
+          key={claveDatos}
+          columnas={columnas}
+          filtrosBoard={filtrosBoard}
+          orden={filtros.orden}
+          vista={filtros.vista}
+          hayFiltros={hayFiltros}
+          totalGeneral={totalGeneral}
+          valorGeneral={valorGeneral}
+        />
+      </div>
+    </div>
+  );
+}
 
-            return (
-              <div
-                key={stage.id}
-                className="flex w-64 shrink-0 flex-col rounded-xl border border-border bg-muted/50"
-              >
-                <div className="p-3">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className="size-2.5 rounded-full"
-                      style={{ backgroundColor: stage.color }}
-                    />
-                    <h2 className="text-sm font-semibold">{stage.name}</h2>
-                    <span className="ml-auto rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                      {list.length}
-                    </span>
-                  </div>
-                  {sum > 0 && (
-                    <p className="mt-1 pl-4.5 text-xs text-muted-foreground">
-                      {formatCLP(sum)}
+// -------------------------------------------------------------
+// Columnas con "cargar más" (estado local de páginas anexadas)
+// -------------------------------------------------------------
+
+interface EstadoColumna {
+  extra: TarjetaBoard[];
+  cursor: CursorBoard | null;
+  cargando: boolean;
+  /** El último "cargar más" falló (distinto de "no hay más páginas") */
+  falloCarga: boolean;
+}
+
+interface FilaColumna {
+  col: ColumnaInicial;
+  est: EstadoColumna;
+  visibles: TarjetaBoard[];
+}
+
+function ContenidoTablero({
+  columnas,
+  filtrosBoard,
+  orden,
+  vista,
+  hayFiltros,
+  totalGeneral,
+  valorGeneral,
+}: {
+  columnas: ColumnaInicial[];
+  filtrosBoard: FiltrosBoard;
+  orden: OrdenBoard;
+  vista: "tablero" | "lista";
+  hayFiltros: boolean;
+  totalGeneral: number | null;
+  valorGeneral: number | null;
+}) {
+  const [estados, setEstados] = useState<Record<string, EstadoColumna>>({});
+
+  function estadoInicial(col: ColumnaInicial): EstadoColumna {
+    return { extra: [], cursor: col.cursor, cargando: false, falloCarga: false };
+  }
+
+  async function cargarMas(col: ColumnaInicial) {
+    const actual = estados[col.etapa.id] ?? estadoInicial(col);
+    if (!actual.cursor || actual.cargando) return;
+    const cursor = actual.cursor;
+
+    setEstados((prev) => ({
+      ...prev,
+      [col.etapa.id]: {
+        ...(prev[col.etapa.id] ?? estadoInicial(col)),
+        cargando: true,
+        falloCarga: false,
+      },
+    }));
+
+    const res = await cargarMasTarjetas(col.etapa.id, filtrosBoard, cursor, orden);
+
+    setEstados((prev) => {
+      const est = prev[col.etapa.id] ?? estadoInicial(col);
+      if (!res.ok) {
+        return {
+          ...prev,
+          [col.etapa.id]: { ...est, cargando: false, falloCarga: true },
+        };
+      }
+      return {
+        ...prev,
+        [col.etapa.id]: {
+          extra: [...est.extra, ...res.pagina.tarjetas],
+          cursor: res.pagina.siguiente,
+          cargando: false,
+          falloCarga: false,
+        },
+      };
+    });
+  }
+
+  // Cuando una tarjeta anexada se mueve de etapa o se gana/pierde, el
+  // refresh del servidor solo corrige las primeras páginas (props); las
+  // anexadas son nuestras y hay que sacarla a mano o quedaría fantasma.
+  function quitarDeExtras(id: string) {
+    setEstados((prev) => {
+      const siguiente: Record<string, EstadoColumna> = {};
+      for (const [stageId, est] of Object.entries(prev)) {
+        siguiente[stageId] = {
+          ...est,
+          extra: est.extra.filter((t) => t.id !== id),
+        };
+      }
+      return siguiente;
+    });
+  }
+
+  const filas: FilaColumna[] = columnas.map((col) => {
+    const est = estados[col.etapa.id] ?? estadoInicial(col);
+    // Tras un refresh (p.ej. después de mover una tarjeta) la primera página
+    // puede incluir filas que ya estaban anexadas; se deduplica por id para
+    // no pintar la misma tarjeta dos veces.
+    const idsIniciales = new Set(col.tarjetas.map((t) => t.id));
+    const visibles = [
+      ...col.tarjetas,
+      ...est.extra.filter((t) => !idsIniciales.has(t.id)),
+    ];
+    return { col, est, visibles };
+  });
+
+  if (vista === "lista") {
+    return (
+      <VistaLista
+        filas={filas}
+        hayFiltros={hayFiltros}
+        totalGeneral={totalGeneral}
+        valorGeneral={valorGeneral}
+        onCargarMas={cargarMas}
+      />
+    );
+  }
+
+  return (
+    <div className="flex flex-1 gap-3 overflow-x-auto pb-4">
+      {filas.map(({ col, est, visibles }, index) => {
+        const prevStageId = index > 0 ? columnas[index - 1].etapa.id : null;
+        const nextStageId =
+          index < columnas.length - 1 ? columnas[index + 1].etapa.id : null;
+
+        return (
+          <div
+            key={col.etapa.id}
+            className="flex w-64 shrink-0 flex-col rounded-xl border border-border bg-muted/50"
+          >
+            <div className="p-3">
+              <div className="flex items-center gap-2">
+                <span
+                  className="size-2.5 rounded-full"
+                  style={{ backgroundColor: col.etapa.color }}
+                />
+                <h2 className="text-sm font-semibold">{col.etapa.name}</h2>
+                {/* Total REAL de la etapa en el servidor, no lo cargado */}
+                <span className="ml-auto rounded-full bg-muted px-2 py-0.5 text-xs tabular-nums text-muted-foreground">
+                  {col.total !== null ? nf.format(col.total) : "—"}
+                </span>
+              </div>
+              {col.valor !== null && col.valor > 0 && (
+                <p
+                  className="mt-1 pl-4.5 text-xs tabular-nums text-muted-foreground"
+                  title={formatCLP(col.valor)}
+                >
+                  {clpCompacto.format(col.valor)}
+                </p>
+              )}
+            </div>
+            <div className="flex flex-1 flex-col gap-2 p-2 pt-0">
+              {col.fallo ? (
+                // Falló la consulta de ESTA columna: se dice, no se dibuja
+                // una columna vacía que parezca "sin oportunidades".
+                <div className="flex flex-col items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-center">
+                  <TriangleAlert className="size-4 text-destructive" />
+                  <p className="text-xs text-destructive">
+                    No pudimos cargar esta columna. Vuelve a cargar la página.
+                  </p>
+                </div>
+              ) : visibles.length === 0 ? (
+                <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border p-6 text-center">
+                  <Target className="size-5 text-muted-foreground/50" />
+                  <p className="text-xs text-muted-foreground">
+                    {hayFiltros
+                      ? "Sin resultados con este filtro. Prueba quitando alguno."
+                      : "Sin oportunidades. Crea una con «Nueva oportunidad»."}
+                  </p>
+                </div>
+              ) : (
+                visibles.map((t) => (
+                  <OpportunityCard
+                    key={t.id}
+                    id={t.id}
+                    title={t.title}
+                    contactId={t.contact_id}
+                    contactName={t.contact_name}
+                    value={t.value}
+                    prevStageId={prevStageId}
+                    nextStageId={nextStageId}
+                    alMutar={quitarDeExtras}
+                  />
+                ))
+              )}
+
+              {est.cursor && (
+                <div className="flex flex-col items-center gap-1.5 pb-1 pt-0.5 text-center">
+                  <p className="text-[11px] tabular-nums text-muted-foreground">
+                    {col.total !== null
+                      ? `${nf.format(visibles.length)} de ${nf.format(col.total)} cargadas`
+                      : `${nf.format(visibles.length)} cargadas`}
+                  </p>
+                  {est.falloCarga && (
+                    <p className="text-xs text-destructive">
+                      No pudimos cargar más tarjetas.
                     </p>
                   )}
-                </div>
-                <div className="flex flex-1 flex-col gap-2 p-2 pt-0">
-                  {list.length === 0 ? (
-                    <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border p-6 text-center">
-                      <Target className="size-5 text-muted-foreground/50" />
-                      <p className="text-xs text-muted-foreground">
-                        {hayFiltros
-                          ? "Sin resultados con este filtro"
-                          : "Sin oportunidades"}
-                      </p>
-                    </div>
-                  ) : (
-                    list.map((o) => (
-                      <OpportunityCard
-                        key={o.id}
-                        id={o.id}
-                        title={o.title}
-                        contactId={o.contact_id}
-                        contactName={o.contact_name}
-                        value={o.value}
-                        prevStageId={prevStageId}
-                        nextStageId={nextStageId}
-                      />
-                    ))
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      ) : (
-        <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-sm">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
-                <th className="px-3 py-2.5 font-medium">Título</th>
-                <th className="px-3 py-2.5 font-medium">Contacto</th>
-                <th className="px-3 py-2.5 font-medium">Etapa</th>
-                <th className="px-3 py-2.5 text-right font-medium">Valor</th>
-                <th className="px-3 py-2.5 font-medium">Vendedor</th>
-                <th className="px-3 py-2.5 font-medium">Creada</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtradas.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={6}
-                    className="px-3 py-8 text-center text-sm text-muted-foreground"
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => void cargarMas(col)}
+                    disabled={est.cargando}
+                    className="w-full"
                   >
-                    Ninguna oportunidad coincide con los filtros.
-                  </td>
-                </tr>
-              ) : (
-                filtradas.map((o) => {
-                  const etapa = etapaById.get(o.stage_id);
-                  return (
-                    <tr
-                      key={o.id}
-                      className="border-b border-border transition-colors duration-150 last:border-0 hover:bg-muted/50"
-                    >
-                      <td className="px-3 py-2.5 font-medium">{o.title}</td>
-                      <td className="px-3 py-2.5">
-                        <Link
-                          href={`/contactos/${o.contact_id}`}
-                          className="text-primary hover:underline"
-                        >
-                          {o.contact_name}
-                        </Link>
-                      </td>
-                      <td className="px-3 py-2.5">
-                        {etapa ? (
-                          <span
-                            className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium"
-                            style={{
-                              backgroundColor: `${etapa.color}1a`,
-                              color: etapa.color,
-                            }}
-                          >
-                            {etapa.name}
-                          </span>
-                        ) : (
-                          "—"
-                        )}
-                      </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums">
-                        {o.value > 0 ? formatCLP(o.value) : "—"}
-                      </td>
-                      <td className="px-3 py-2.5 text-muted-foreground">
-                        {o.owner_name ?? "Sin asignar"}
-                      </td>
-                      <td className="px-3 py-2.5 tabular-nums text-muted-foreground">
-                        {formatDate(o.created_at)}
-                      </td>
-                    </tr>
-                  );
-                })
+                    {est.cargando ? (
+                      <>
+                        <Loader2 className="size-3.5 animate-spin" /> Cargando…
+                      </>
+                    ) : est.falloCarga ? (
+                      "Reintentar"
+                    ) : (
+                      "Cargar 25 más"
+                    )}
+                  </Button>
+                </div>
               )}
-            </tbody>
-            {filtradas.length > 0 && (
-              <tfoot>
-                <tr className="border-t border-border bg-muted/50 font-medium">
-                  <td className="px-3 py-2.5" colSpan={3}>
-                    {filtradas.length}{" "}
-                    {filtradas.length === 1 ? "oportunidad" : "oportunidades"}
-                  </td>
-                  <td className="px-3 py-2.5 text-right tabular-nums">
-                    {formatCLP(totalFiltrado)}
-                  </td>
-                  <td colSpan={2} />
-                </tr>
-              </tfoot>
-            )}
-          </table>
-        </div>
-      )}
+            </div>
+          </div>
+        );
+      })}
     </div>
+  );
+}
+
+// -------------------------------------------------------------
+// Vista lista (mismas páginas cargadas, pie con totales reales)
+// -------------------------------------------------------------
+
+function VistaLista({
+  filas,
+  hayFiltros,
+  totalGeneral,
+  valorGeneral,
+  onCargarMas,
+}: {
+  filas: FilaColumna[];
+  hayFiltros: boolean;
+  totalGeneral: number | null;
+  valorGeneral: number | null;
+  onCargarMas: (col: ColumnaInicial) => Promise<void>;
+}) {
+  const cargadas = filas.reduce((acc, f) => acc + f.visibles.length, 0);
+  const sinNada =
+    cargadas === 0 && filas.every((f) => !f.est.cursor && !f.col.fallo);
+
+  return (
+    <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-sm">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
+            <th className="px-3 py-2.5 font-medium">Título</th>
+            <th className="px-3 py-2.5 font-medium">Contacto</th>
+            <th className="px-3 py-2.5 font-medium">Etapa</th>
+            <th className="px-3 py-2.5 text-right font-medium">Valor</th>
+            <th className="px-3 py-2.5 font-medium">Vendedor</th>
+            <th className="px-3 py-2.5 font-medium">Creada</th>
+          </tr>
+        </thead>
+        <tbody>
+          {sinNada ? (
+            <tr>
+              <td
+                colSpan={6}
+                className="px-3 py-8 text-center text-sm text-muted-foreground"
+              >
+                {hayFiltros
+                  ? "Ninguna oportunidad coincide con los filtros. Prueba quitando alguno."
+                  : "Aún no hay oportunidades. Crea la primera con «Nueva oportunidad»."}
+              </td>
+            </tr>
+          ) : (
+            filas.map(({ col, est, visibles }) => (
+              // La lista se agrupa por etapa para reutilizar tal cual la
+              // paginación por columna (mismo estado y misma server action
+              // que el tablero: nada se trae dos veces).
+              <FilasDeEtapa
+                key={col.etapa.id}
+                col={col}
+                est={est}
+                visibles={visibles}
+                onCargarMas={onCargarMas}
+              />
+            ))
+          )}
+        </tbody>
+        {!sinNada && totalGeneral !== null && (
+          <tfoot>
+            <tr className="border-t border-border bg-muted/50 font-medium">
+              <td className="px-3 py-2.5 tabular-nums" colSpan={3}>
+                {nf.format(cargadas)} de {nf.format(totalGeneral)}{" "}
+                {totalGeneral === 1 ? "oportunidad" : "oportunidades"} cargadas
+              </td>
+              <td className="px-3 py-2.5 text-right tabular-nums">
+                {formatCLP(valorGeneral ?? 0)}
+              </td>
+              <td colSpan={2} />
+            </tr>
+          </tfoot>
+        )}
+      </table>
+    </div>
+  );
+}
+
+function FilasDeEtapa({
+  col,
+  est,
+  visibles,
+  onCargarMas,
+}: {
+  col: ColumnaInicial;
+  est: EstadoColumna;
+  visibles: TarjetaBoard[];
+  onCargarMas: (col: ColumnaInicial) => Promise<void>;
+}) {
+  return (
+    <>
+      {col.fallo && (
+        <tr className="border-b border-border">
+          <td colSpan={6} className="px-3 py-3">
+            <p className="flex items-center gap-2 text-xs text-destructive">
+              <TriangleAlert className="size-3.5 shrink-0" />
+              No pudimos cargar las oportunidades de “{col.etapa.name}”. Vuelve
+              a cargar la página.
+            </p>
+          </td>
+        </tr>
+      )}
+      {visibles.map((t) => (
+        <tr
+          key={t.id}
+          className="border-b border-border transition-colors duration-150 last:border-0 hover:bg-muted/50"
+        >
+          <td className="px-3 py-2.5 font-medium">{t.title}</td>
+          <td className="px-3 py-2.5">
+            <Link
+              href={`/contactos/${t.contact_id}`}
+              className="text-primary hover:underline"
+            >
+              {t.contact_name}
+            </Link>
+          </td>
+          <td className="px-3 py-2.5">
+            <span
+              className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium"
+              style={{
+                backgroundColor: `${col.etapa.color}1a`,
+                color: col.etapa.color,
+              }}
+            >
+              {col.etapa.name}
+            </span>
+          </td>
+          <td className="px-3 py-2.5 text-right tabular-nums">
+            {t.value > 0 ? formatCLP(t.value) : "—"}
+          </td>
+          <td className="px-3 py-2.5 text-muted-foreground">
+            {t.owner_name ?? "Sin asignar"}
+          </td>
+          <td className="px-3 py-2.5 tabular-nums text-muted-foreground">
+            {formatDate(t.created_at)}
+          </td>
+        </tr>
+      ))}
+      {est.cursor && (
+        <tr className="border-b border-border bg-muted/30">
+          <td colSpan={6} className="px-3 py-2">
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <span className="text-[11px] tabular-nums text-muted-foreground">
+                {col.etapa.name}:{" "}
+                {col.total !== null
+                  ? `${nf.format(visibles.length)} de ${nf.format(col.total)} cargadas`
+                  : `${nf.format(visibles.length)} cargadas`}
+              </span>
+              {est.falloCarga && (
+                <span className="text-xs text-destructive">
+                  No pudimos cargar más.
+                </span>
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => void onCargarMas(col)}
+                disabled={est.cargando}
+              >
+                {est.cargando ? (
+                  <>
+                    <Loader2 className="size-3.5 animate-spin" /> Cargando…
+                  </>
+                ) : est.falloCarga ? (
+                  "Reintentar"
+                ) : (
+                  "Cargar 25 más"
+                )}
+              </Button>
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
   );
 }
