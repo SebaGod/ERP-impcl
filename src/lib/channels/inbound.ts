@@ -4,6 +4,8 @@ import { leerCredenciales, tokenVencido } from "./credenciales";
 import { dispatchEvent } from "@/lib/automation/engine";
 import { runAgent, type HistoryMessage } from "@/lib/agent/engine";
 import { debeResponder, type GuardMessage } from "@/lib/agent/guards";
+import { antesDeResponder, registrarCorrida } from "@/lib/agent/presupuesto";
+import { registrarError } from "@/lib/observabilidad";
 
 /**
  * Qué hacer con un mensaje que llegó de Meta.
@@ -184,6 +186,13 @@ async function responderConAgente(params: {
     body,
   }));
 
+  // El techo se consulta ANTES de cargar nada: si ya se pasó, no tiene
+  // sentido armar el contexto ni llamar al modelo.
+  const presupuesto = await antesDeResponder(supabase, orgId);
+  if (!presupuesto.puedeResponder) {
+    return presupuesto.motivo ?? "tope de gasto alcanzado";
+  }
+
   const [{ data: agente }, { data: conocimiento }] = await Promise.all([
     supabase
       .from("ai_agents")
@@ -238,14 +247,15 @@ async function responderConAgente(params: {
     external_id: idProveedor,
   });
 
-  await supabase.from("ai_agent_runs").insert({
-    org_id: orgId,
-    ai_agent_id: agente.id,
-    conversation_id: conversacion.conversation_id,
-    summary: resultado.reply.slice(0, 280),
-    tools_used: resultado.toolsUsed,
-    input_tokens: resultado.inputTokens,
-    output_tokens: resultado.outputTokens,
+  await registrarCorrida(supabase, {
+    orgId,
+    agentId: agente.id,
+    conversationId: conversacion.conversation_id,
+    model: agente.model,
+    summary: resultado.reply,
+    toolsUsed: resultado.toolsUsed,
+    inputTokens: resultado.inputTokens,
+    outputTokens: resultado.outputTokens,
   });
 
   return null;
@@ -414,6 +424,15 @@ export async function procesarEntrante(
   } catch (e) {
     const mensaje = e instanceof Error ? e.message : "error desconocido";
     await cerrarEvento(supabase, eventoId, "error", { error: mensaje });
+    // Además de la bitácora del evento, a la de errores: es la que se
+    // filtra por área y por cliente cuando alguien reclama.
+    await registrarError(supabase, "webhook", e, {
+      detalle: {
+        canal: evento.canal,
+        cuenta_receptora: evento.externalId,
+        mensaje_id: evento.mensajeId,
+      },
+    });
     return "error";
   }
 }

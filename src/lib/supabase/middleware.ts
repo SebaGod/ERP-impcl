@@ -28,6 +28,9 @@ const PUBLIC_PATHS = [
   "/api/webhooks/meta",
   "/api/meta/data-deletion",
   "/api/meta/deauthorize",
+  // La llama el cron de Vercel, que tampoco tiene sesión. Se protege con
+  // su propio secreto (CRON_SECRET), comparado en tiempo constante.
+  "/api/cron",
 ];
 
 export function isPublicPath(pathname: string) {

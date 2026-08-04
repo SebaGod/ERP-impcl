@@ -1,7 +1,15 @@
 /**
- * Localización Chile: CLP sin decimales con separador de miles,
- * fechas dd-mm-aaaa, zona horaria America/Santiago y RUT con
- * dígito verificador.
+ * Formato chileno por defecto y utilidades del RUT.
+ *
+ * OJO: las funciones de fecha y moneda de este archivo asumen Chile. Se
+ * mantienen porque son el default correcto para las subcuentas que ya
+ * están andando, pero TODA pantalla nueva —y toda que se toque— debe usar
+ * `@/lib/locale` con la configuración de la subcuenta: zona horaria,
+ * moneda e idioma viven en `organizations`, no en el código. Un cliente
+ * en Lima con horas de Santiago ve sus citas corridas cuatro horas.
+ *
+ * El RUT sí es chileno y se queda: es un dato del país, no una
+ * preferencia de presentación.
  */
 
 export const TIMEZONE = "America/Santiago";
@@ -44,6 +52,10 @@ const dateTimeFormatter = new Intl.DateTimeFormat("es-CL", {
   year: "numeric",
   hour: "2-digit",
   minute: "2-digit",
+  // Igual que en locale.ts: las dos rutas tienen que coincidir mientras
+  // las pantallas se van migrando, o la misma hora se vería distinta
+  // según en qué pantalla se mire.
+  hour12: false,
   timeZone: TIMEZONE,
 });
 
