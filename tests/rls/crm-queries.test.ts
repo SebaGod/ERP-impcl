@@ -218,6 +218,37 @@ describeIf("consultas paginadas del CRM", () => {
     expect(vistos.size).toBe(40);
   });
 
+  it("ordena por valor y el keyset no repite ni pierde con empates", async () => {
+    // La etapa 0 tiene 40 abiertas y muchas comparten valor (n%5)*100000:
+    // los empates son justo donde un cursor mal cortado duplica o salta.
+    const vistos = new Set<string>();
+    const valores: number[] = [];
+    let cursor: CursorBoard | null = null;
+
+    for (;;) {
+      const pagina = await tarjetasBoard(
+        miembro, orgId, pipelineId, etapas[0]!, {}, cursor, 7, "valor"
+      );
+      for (const t of pagina.tarjetas) {
+        expect(vistos.has(t.id)).toBe(false);
+        vistos.add(t.id);
+        valores.push(t.value);
+      }
+      if (!pagina.siguiente) break;
+      cursor = pagina.siguiente;
+    }
+    expect(vistos.size).toBe(40);
+    expect(valores).toEqual([...valores].sort((a, b) => b - a));
+  });
+
+  it("ordena de más antiguas a más nuevas", async () => {
+    const pagina = await tarjetasBoard(
+      miembro, orgId, pipelineId, etapas[0]!, {}, null, 40, "antiguo"
+    );
+    const fechas = pagina.tarjetas.map((t) => new Date(t.created_at).getTime());
+    expect(fechas).toEqual([...fechas].sort((a, b) => a - b));
+  });
+
   it("el conteo y las tarjetas obedecen el MISMO filtro", async () => {
     const filtros = { canal: "whatsapp" };
     const [columnas, pagina] = await Promise.all([

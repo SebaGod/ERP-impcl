@@ -48,10 +48,18 @@ export interface TarjetaBoard {
   owner_name: string | null;
 }
 
+/**
+ * Orden de las tarjetas dentro de una columna. Cada uno tiene su propio
+ * borde de keyset e índice en la base: cambiar de orden RESETEA el cursor.
+ */
+export type OrdenBoard = "reciente" | "antiguo" | "valor";
+
 /** Cursor keyset de una columna: la última tarjeta ya cargada */
 export interface CursorBoard {
   creada: string;
   id: string;
+  /** Solo se usa (y viene) cuando el orden es por valor */
+  valor?: number;
 }
 
 export interface PaginaTarjetas {
@@ -100,7 +108,8 @@ export async function tarjetasBoard(
   stageId: string,
   filtros: FiltrosBoard = {},
   cursor: CursorBoard | null = null,
-  limite = 25
+  limite = 25,
+  orden: OrdenBoard = "reciente"
 ): Promise<PaginaTarjetas> {
   // Se pide una de más: si llega, hay página siguiente y no se muestra.
   const { data, error } = await supabase.rpc("crm_board_cards", {
@@ -108,6 +117,8 @@ export async function tarjetasBoard(
     p_stage: stageId,
     p_cursor_creada: cursor?.creada ?? null,
     p_cursor_id: cursor?.id ?? null,
+    p_cursor_valor: orden === "valor" ? (cursor?.valor ?? null) : null,
+    p_orden: orden,
     p_limit: limite + 1,
   });
   if (error) throw new Error(`No se pudo leer la columna: ${error.message}`);
@@ -123,8 +134,12 @@ export async function tarjetasBoard(
 
   return {
     tarjetas,
+    // El cursor lleva también el valor: con orden por plata, el borde de la
+    // página siguiente se corta por (valor, id), no por fecha.
     siguiente:
-      hayMas && ultima ? { creada: ultima.created_at, id: ultima.id } : null,
+      hayMas && ultima
+        ? { creada: ultima.created_at, id: ultima.id, valor: ultima.value }
+        : null,
   };
 }
 
