@@ -170,3 +170,76 @@ export function regionDe(org: {
     locale: org.locale || REGION_CHILE.locale,
   };
 }
+
+// ---------------------------------------------------------------
+// Sumar dinero de varias subcuentas
+// ---------------------------------------------------------------
+
+export interface MontoAgrupado {
+  currency: string;
+  total: number;
+  /** Cuántas subcuentas aportaron a este subtotal */
+  cuantas: number;
+  /** Para poder formatearlo con el idioma correcto de esa moneda */
+  config: ConfigRegional;
+}
+
+/**
+ * Agrupa montos por moneda ANTES de sumarlos.
+ *
+ * El panel de agencia junta el pipeline de todos los clientes en un solo
+ * número. Mientras todas las subcuentas sean chilenas eso da lo correcto;
+ * desde la primera peruana, ese total suma pesos con soles y presenta el
+ * resultado con la misma seguridad que los demás números de la pantalla.
+ *
+ * No hay tipo de cambio en el sistema, y meterlo traería su propio
+ * problema (¿de qué día? ¿de qué fuente?). La salida honesta es no sumar
+ * lo que no se puede sumar: un subtotal por moneda.
+ *
+ * Devuelve los subtotales ordenados de mayor a menor. Con una sola moneda
+ * —el caso de hoy— devuelve un solo elemento y la pantalla se ve igual
+ * que siempre.
+ */
+export function agruparPorMoneda<T>(
+  filas: T[],
+  monto: (fila: T) => number,
+  region: (fila: T) => ConfigRegional
+): MontoAgrupado[] {
+  const mapa = new Map<string, MontoAgrupado>();
+
+  for (const fila of filas) {
+    const config = region(fila);
+    const actual = mapa.get(config.currency);
+    const valor = Number(monto(fila)) || 0;
+
+    if (actual) {
+      actual.total += valor;
+      actual.cuantas += 1;
+    } else {
+      mapa.set(config.currency, {
+        currency: config.currency,
+        total: valor,
+        cuantas: 1,
+        config,
+      });
+    }
+  }
+
+  return [...mapa.values()].sort((a, b) => b.total - a.total);
+}
+
+/**
+ * Los subtotales ya formateados, listos para pintar.
+ *
+ * Con una moneda devuelve un solo texto. Con varias devuelve uno por
+ * moneda, y quien lo muestre debe pintarlos por separado —nunca
+ * concatenados con un "+", que volvería a sugerir una suma que no existe.
+ */
+export function formatearAgrupado(grupos: MontoAgrupado[]): string[] {
+  return grupos.map((g) => formatMonto(g.total, g.config));
+}
+
+/** ¿La cartera mezcla monedas? Decide si hay que mostrar subtotales. */
+export function hayVariasMonedas(grupos: MontoAgrupado[]): boolean {
+  return grupos.length > 1;
+}

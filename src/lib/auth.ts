@@ -2,6 +2,7 @@ import { cache } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { regionDe, type ConfigRegional } from "@/lib/locale";
 import {
   permisosEfectivos,
   PERMISOS_ADMIN,
@@ -35,6 +36,12 @@ export interface SessionContext {
     rut: string | null;
     logoUrl: string | null;
     settings: { tax_rate: number; quote_validity_days: number };
+    /**
+     * Zona horaria, moneda e idioma de ESTE cliente. Viaja en la sesión
+     * para que ninguna pantalla necesite una consulta extra solo para
+     * saber cómo escribir un monto o una hora.
+     */
+    region: ConfigRegional;
   } | null;
   role: OrgRole | null;
   /** Módulos visibles para esta persona en la organización activa */
@@ -42,7 +49,17 @@ export interface SessionContext {
   /** Nombre del perfil asignado ("Vendedor", "Contador"…), si tiene uno */
   roleLabel: string | null;
   /** Agencia a la que pertenece el usuario, si es staff */
-  agency: { id: string; name: string; slug: string; role: AgencyRole } | null;
+  agency: {
+    id: string;
+    name: string;
+    slug: string;
+    role: AgencyRole;
+    /**
+     * La moneda de la AGENCIA: en la que le cobra a sus clientes. Es otra
+     * que la de cada subcuenta, que es en la que el cliente vende.
+     */
+    region: ConfigRegional;
+  } | null;
   /** Todas las organizaciones a las que puede entrar (para el switcher) */
   orgs: OrgSummary[];
 }
@@ -54,6 +71,9 @@ interface OrgRow {
   rut: string | null;
   logo_url: string | null;
   settings: { tax_rate: number; quote_validity_days: number };
+  timezone: string | null;
+  currency: string | null;
+  locale: string | null;
 }
 
 /** supabase-js sin tipos generados infiere las relaciones como arreglo */
@@ -83,28 +103,34 @@ export const getSessionContext = cache(
         supabase
           .from("organization_members")
           .select(
-            "role, permissions, organizations (id, name, slug, rut, logo_url, settings), role_defs (label, permissions, base_role)"
+            "role, permissions, organizations (id, name, slug, rut, logo_url, settings, timezone, currency, locale), role_defs (label, permissions, base_role)"
           )
           .eq("user_id", user.id)
           .order("created_at", { ascending: true }),
         supabase
           .from("agency_members")
-          .select("role, agencies (id, name, slug)")
+          .select("role, agencies (id, name, slug, currency, locale, timezone)")
           .eq("user_id", user.id)
           .order("created_at", { ascending: true })
           .limit(1)
           .maybeSingle(),
       ]);
 
-    const agencyRaw = firstRelation<{ id: string; name: string; slug: string }>(
-      agencyMembership?.agencies
-    );
+    const agencyRaw = firstRelation<{
+      id: string;
+      name: string;
+      slug: string;
+      currency: string | null;
+      locale: string | null;
+      timezone: string | null;
+    }>(agencyMembership?.agencies);
     const agency = agencyRaw
       ? {
           id: agencyRaw.id,
           name: agencyRaw.name,
           slug: agencyRaw.slug,
           role: (agencyMembership?.role as AgencyRole) ?? "admin",
+          region: regionDe(agencyRaw),
         }
       : null;
 
@@ -112,7 +138,7 @@ export const getSessionContext = cache(
     const { data: subaccounts } = agency
       ? await supabase
           .from("organizations")
-          .select("id, name, slug, rut, logo_url, settings")
+          .select("id, name, slug, rut, logo_url, settings, timezone, currency, locale")
           .eq("agency_id", agency.id)
           .order("name")
       : { data: null };
@@ -186,6 +212,7 @@ export const getSessionContext = cache(
             rut: active.row.rut,
             logoUrl: active.row.logo_url,
             settings: active.row.settings,
+            region: regionDe(active.row),
           }
         : null,
       role: active?.role ?? null,
