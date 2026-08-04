@@ -84,6 +84,7 @@ const tonoArea: Record<string, string> = {
   seguimiento: "bg-warning/10 text-warning",
   envio: "bg-destructive/10 text-destructive",
   integracion: "bg-primary/10 text-primary",
+  pantalla: "bg-destructive/10 text-destructive",
 };
 
 const nf = new Intl.NumberFormat("es-CL");
@@ -235,7 +236,7 @@ export function ErrorsTable({
           <EmptyState
             icon={CheckCircle2}
             title={`Sin errores en ${frase}`}
-            description="Nada falló en la cartera dentro de esta ventana. Cuando algo se rompa —un envío rechazado por Meta, un seguimiento que no salió, un webhook mal firmado— aparecerá acá con el detalle para diagnosticarlo."
+            description="Nada falló en la cartera dentro de esta ventana. Cuando algo se rompa —un envío rechazado por Meta, un seguimiento que no salió, una pantalla que se cayó delante de un cliente— aparecerá acá con el detalle para diagnosticarlo."
           />
         )
       ) : (

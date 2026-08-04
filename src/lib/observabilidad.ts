@@ -20,7 +20,12 @@ export type AreaError =
   | "automatizacion"
   | "seguimiento"
   | "envio"
-  | "integracion";
+  | "integracion"
+  // Una pantalla que se cayó delante del cliente. Es la única área que no
+  // nace en el servidor: la reporta el error boundary desde el navegador.
+  // Sin esto, la única señal de que a alguien se le rompió la aplicación
+  // era que llamara a contarlo.
+  | "pantalla";
 
 export interface ContextoError {
   orgId?: string | null;

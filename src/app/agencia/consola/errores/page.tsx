@@ -30,7 +30,7 @@ const RUTA = "/agencia/consola/errores";
  */
 const TOPE = 500;
 
-/** Las seis áreas que registra registrarError() (@/lib/observabilidad) */
+/** Las siete áreas que registra registrarError() (@/lib/observabilidad) */
 const ETIQUETA_AREA: Record<string, string> = {
   webhook: "Webhook",
   agente: "Agente",
@@ -38,6 +38,7 @@ const ETIQUETA_AREA: Record<string, string> = {
   seguimiento: "Seguimiento",
   envio: "Envío",
   integracion: "Integración",
+  pantalla: "Pantalla",
 };
 
 const VENTANAS: { dias: number; etiqueta: string; frase: string }[] = [
@@ -358,8 +359,9 @@ export default async function ErroresPage({
         <h1 className="text-2xl font-semibold">Errores</h1>
         <p className="text-sm text-muted-foreground">
           Lo que falló en la cartera: envíos rechazados, webhooks mal firmados,
-          seguimientos que no salieron y corridas del agente que se cayeron.
-          Cada línea trae el detalle con los ids para diagnosticarla.
+          seguimientos que no salieron, corridas del agente que se cayeron y
+          pantallas que se rompieron delante de un cliente. Cada línea trae el
+          detalle con los ids para diagnosticarla.
         </p>
       </div>
 
