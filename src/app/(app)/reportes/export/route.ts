@@ -1,5 +1,6 @@
 import { requireAdminContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { exigirLectura } from "@/lib/lectura";
 import { formatFecha } from "@/lib/locale";
 import { resolvePeriod } from "../period";
 
@@ -31,7 +32,7 @@ export async function GET(request: Request) {
   let csv: string;
 
   if (tipo === "movimientos") {
-    const { data } = await supabase
+    const movimientosRes = await supabase
       .from("transactions")
       .select("txn_date, type, amount, description, finance_categories (name)")
       .eq("org_id", session.org.id)
@@ -40,6 +41,11 @@ export async function GET(request: Request) {
       .gte("txn_date", period.from)
       .lt("txn_date", period.toExclusive)
       .order("txn_date");
+
+    // Un CSV con solo cabeceras se abre igual que uno legítimo: quien lo
+    // recibe concluye que ese mes no hubo movimientos. Mejor no entregar
+    // archivo que entregar uno que miente sin avisar.
+    const data = exigirLectura(movimientosRes, "los movimientos del periodo");
 
     csv = toCsv(
       ["Fecha", "Tipo", "Categoría", "Descripción", "Monto"],
@@ -57,7 +63,7 @@ export async function GET(request: Request) {
       })
     );
   } else {
-    const { data } = await supabase
+    const ordenesRes = await supabase
       .from("work_orders")
       .select(
         "code, title, amount_net, created_at, clients:contacts (name), work_order_stages (name)"
@@ -69,6 +75,8 @@ export async function GET(request: Request) {
       .gte("created_at", period.fromInstant)
       .lt("created_at", period.toInstantExclusive)
       .order("created_at");
+
+    const data = exigirLectura(ordenesRes, "las órdenes del periodo");
 
     csv = toCsv(
       ["Código", "Cliente", "Trabajo", "Etapa", "Monto neto", "Creada"],

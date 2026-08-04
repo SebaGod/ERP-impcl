@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Kanban, Plus } from "lucide-react";
+import { Download, Kanban, Plus } from "lucide-react";
 import { requireOrgContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { exigirLectura } from "@/lib/lectura";
@@ -87,9 +87,19 @@ export default async function TableroPage() {
           </p>
         </div>
         {isAdmin && (
-          <Link href="/tablero/nueva" className={buttonClasses("primary", "md")}>
-            <Plus className="size-4" /> Nueva orden
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Mismo caso que en Finanzas: la exportación de órdenes del
+                mes funcionaba y no había forma de llegar a ella. */}
+            <Link
+              href="/reportes/export?tipo=ventas&periodo=mes"
+              className={buttonClasses("secondary", "md")}
+            >
+              <Download className="size-4" /> Descargar el mes
+            </Link>
+            <Link href="/tablero/nueva" className={buttonClasses("primary", "md")}>
+              <Plus className="size-4" /> Nueva orden
+            </Link>
+          </div>
         )}
       </div>
 

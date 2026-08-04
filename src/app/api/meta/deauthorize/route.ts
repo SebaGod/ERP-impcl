@@ -41,7 +41,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     .filter((v): v is string => typeof v === "string" && v.length > 0);
 
   if (posibles.length > 0) {
-    await supabase
+    const { error } = await supabase
       .from("integrations")
       .update({
         status: "error",
@@ -49,7 +49,19 @@ export async function POST(request: NextRequest): Promise<Response> {
           "La aplicación fue desconectada desde Meta. Vuelve a conectar el canal para seguir recibiendo mensajes.",
       })
       .in("external_id", posibles);
+
+    // Esta marca es lo único que avisa que el canal murió. Si el update
+    // falla en silencio, la integración se queda diciendo "activa" en el
+    // panel de canales mientras Meta ya nos revocó el acceso: los
+    // mensajes dejan de llegar y todo se ve sano. Es exactamente el caso
+    // "no me llegó el mensaje de las 3 de la tarde".
+    if (error) {
+      console.error("[deauthorize] no se pudo marcar el canal:", error.message);
+    }
   }
 
+  // A Meta se le responde ok igual: no reintenta estas notificaciones, y
+  // devolverle un error no recupera el canal. Lo que hace falta es que
+  // quede el rastro de arriba.
   return NextResponse.json({ ok: true });
 }

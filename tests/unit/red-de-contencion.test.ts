@@ -218,6 +218,55 @@ describe("ninguna consulta se cae en silencio", () => {
   }
 });
 
+describe("los endpoints tampoco fallan callados", () => {
+  /**
+   * El barrido de páginas no alcanzaba a los route handlers, y por ahí se
+   * coló una exportación que entregaba un CSV con solo cabeceras cuando
+   * la consulta fallaba: un archivo que se abre igual que uno legítimo y
+   * hace concluir que ese mes no hubo movimientos.
+   */
+  const DELEGAN = new Set([
+    // Reciben el mensaje y lo pasan a un módulo que sí registra el fallo
+    // en la bitácora (inbound.ts, follow-up-runner.ts).
+    "api/webhooks/meta",
+    "api/cron/seguimientos",
+  ]);
+
+  // Recorrido propio: `segmentos()` salta api/ porque ahí no hay UI que
+  // se pueda quedar en blanco, pero sí hay consultas que se pueden caer.
+  function conRuta(dir: string): string[] {
+    const salida: string[] = [];
+    if (existsSync(join(dir, "route.ts"))) salida.push(dir);
+    for (const entrada of readdirSync(dir, { withFileTypes: true })) {
+      if (!entrada.isDirectory() || entrada.name.startsWith("_")) continue;
+      salida.push(...conRuta(join(dir, entrada.name)));
+    }
+    return salida;
+  }
+
+  const handlers = conRuta(APP)
+    .filter((dir) =>
+      readFileSync(join(dir, "route.ts"), "utf8").includes("supabase")
+    )
+    .map(rel);
+
+  it("hay endpoints que consultan la base", () => {
+    expect(handlers.length).toBeGreaterThan(3);
+  });
+
+  for (const nombre of handlers) {
+    if (DELEGAN.has(nombre)) continue;
+    it(`${nombre} mira si la consulta falló`, () => {
+      const fuente = readFileSync(join(APP, nombre, "route.ts"), "utf8");
+      const mira =
+        fuente.includes("exigirLectura") ||
+        fuente.includes(".error") ||
+        /\{\s*(data\s*,\s*)?error\s*\}/.test(fuente);
+      expect(mira).toBe(true);
+    });
+  }
+});
+
 describe("los boundaries usan la API de esta versión de Next", () => {
   const boundaries = TODOS.flatMap((dir) => {
     const salida: string[] = [];

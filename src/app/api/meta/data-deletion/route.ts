@@ -41,15 +41,43 @@ export async function POST(request: NextRequest): Promise<Response> {
   const codigo = randomBytes(12).toString("hex");
   const origen = request.nextUrl.origin;
 
-  if (adminDisponible()) {
-    const supabase = createAdminClient();
-    await supabase.from("data_deletion_requests").insert({
-      confirmation_code: codigo,
-      provider: "meta",
-      external_user_id: usuario,
-      status: "pendiente",
-      detail: { recibido_en: new Date().toISOString() },
-    });
+  // El código solo se entrega si la solicitud quedó guardada.
+  //
+  // Antes se devolvía igual: si no había llave de servicio se saltaba el
+  // registro entero, y si el insert fallaba el error se tragaba. En los
+  // dos casos Meta recibía un código de seguimiento por una solicitud que
+  // no existe en ninguna parte, y la persona que ejerció su derecho a
+  // borrado terminaba en /eliminar-datos leyendo que su código no
+  // corresponde a nada. Nadie se enteraba: para Meta la respuesta fue 200.
+  //
+  // Fallar acá es preferible a mentir. Meta reintenta ante un error, y un
+  // reintento sí puede terminar bien; un código falso no se arregla nunca.
+  if (!adminDisponible()) {
+    console.error("[data-deletion] sin llave de servicio: no se registró");
+    return NextResponse.json(
+      { error: "no disponible" },
+      { status: 503 }
+    );
+  }
+
+  const supabase = createAdminClient();
+  const { error } = await supabase.from("data_deletion_requests").insert({
+    confirmation_code: codigo,
+    provider: "meta",
+    external_user_id: usuario,
+    status: "pendiente",
+    detail: { recibido_en: new Date().toISOString() },
+  });
+
+  if (error) {
+    // Sin org_id conocido —Meta identifica a una persona, no a una
+    // empresa— la bitácora lo rechazaría por RLS, así que va al log del
+    // servidor, que es donde igual se mira este endpoint.
+    console.error("[data-deletion] no se pudo registrar:", error.message);
+    return NextResponse.json(
+      { error: "no se pudo registrar" },
+      { status: 503 }
+    );
   }
 
   // Meta espera exactamente estas dos claves.

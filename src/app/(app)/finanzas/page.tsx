@@ -4,6 +4,7 @@ import {
   ArrowDownCircle,
   ArrowUpCircle,
   CalendarClock,
+  Download,
   Receipt,
   Tags,
   Wallet,
@@ -94,11 +95,23 @@ export default async function FinanzasPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-bold">Finanzas</h1>
-        <p className="text-muted-foreground">
-          Resumen de {monthNames[month - 1]} {year}.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold">Finanzas</h1>
+          <p className="text-muted-foreground">
+            Resumen de {monthNames[month - 1]} {year}.
+          </p>
+        </div>
+        {/* La exportación existía y funcionaba, pero se había quedado sin
+            ningún enlace que la alcanzara: quien la quería tenía que
+            escribir la URL a mano. Es lo que pide el contador todos los
+            meses. */}
+        <Link
+          href="/reportes/export?tipo=movimientos&periodo=mes"
+          className={buttonClasses("secondary", "md")}
+        >
+          <Download className="size-4" /> Descargar el mes
+        </Link>
       </div>
 
       {/* Resumen del mes */}
