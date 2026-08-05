@@ -38,6 +38,30 @@ const MEMBER_TABLES = [
   "work_order_checklist_items",
   "inventory_items",
   "inventory_movements",
+  // Módulos posteriores al test original. Todos tienen SELECT con
+  // is_member(org_id), así que se verifican como legibles por cualquier
+  // miembro; lo que se comprueba abajo es que ningún miembro de OTRA
+  // organización los alcance.
+  "conversations",
+  "messages",
+  "opportunities",
+  "appointments",
+  "pipelines",
+  "pipeline_stages",
+  "dte_documents",
+  "dte_items",
+  "ai_agents",
+  "ai_agent_knowledge",
+  "integrations",
+  "automations",
+  "message_templates",
+  "tag_defs",
+  "custom_field_defs",
+  "notifications",
+  "follow_ups",
+  "role_defs",
+  "saved_views",
+  "clients",
 ] as const;
 
 // Tablas con dinero/precios: solo admin
@@ -196,6 +220,130 @@ describe.skipIf(!hasCredentials)("Aislamiento RLS entre organizaciones", () => {
       quantity: 100,
       unit_cost: 450,
     });
+
+    // ---- Módulos que llegaron después del test original ----
+    //
+    // La lista de tablas se escribió cuando la aplicación tenía el CRM y
+    // la producción; todo lo que vino después —las conversaciones de
+    // WhatsApp, los documentos tributarios, el agente— quedó fuera sin que
+    // nadie lo notara. Sus políticas están bien escritas, pero "están bien
+    // escritas" es exactamente lo que este archivo existe para no tener
+    // que suponer. Son además los datos más sensibles que guardamos: lo
+    // que un cliente le escribió a su proveedor y lo que ese proveedor le
+    // declaró al SII.
+
+    const { data: conversation } = await db
+      .from("conversations")
+      .insert({ org_id: orgId, contact_id: client!.id, channel: "whatsapp" })
+      .select("id")
+      .single();
+    await db.from("messages").insert({
+      org_id: orgId,
+      conversation_id: conversation!.id,
+      direction: "entrante",
+      sender: "contacto",
+      body: "Mensaje privado de prueba",
+    });
+
+    // El embudo no viene en la plantilla de imprenta: se crea acá.
+    const { data: pipeline } = await db
+      .from("pipelines")
+      .insert({ org_id: orgId, name: "Embudo de prueba" })
+      .select("id")
+      .single();
+    const { data: pstage } = await db
+      .from("pipeline_stages")
+      .insert({ org_id: orgId, pipeline_id: pipeline!.id, name: "Nuevo" })
+      .select("id")
+      .single();
+    await db.from("opportunities").insert({
+      org_id: orgId,
+      contact_id: client!.id,
+      pipeline_id: pipeline!.id,
+      stage_id: pstage!.id,
+      title: "Oportunidad de prueba",
+      value: 250000,
+    });
+
+    await db.from("appointments").insert({
+      org_id: orgId,
+      contact_id: client!.id,
+      title: "Reunión de prueba",
+      starts_at: "2026-09-01T14:00:00Z",
+      ends_at: "2026-09-01T15:00:00Z",
+    });
+
+    const { data: dte } = await db
+      .from("dte_documents")
+      .insert({ org_id: orgId, tipo: 33, neto: 100000, iva: 19000, total: 119000 })
+      .select("id")
+      .single();
+    await db.from("dte_items").insert({
+      org_id: orgId,
+      dte_id: dte!.id,
+      descripcion: "Servicio facturado",
+      cantidad: 1,
+      precio_unitario: 100000,
+      monto: 100000,
+    });
+
+    const { data: agent } = await db
+      .from("ai_agents")
+      .insert({ org_id: orgId, name: "Agente de prueba" })
+      .select("id")
+      .single();
+    await db.from("ai_agent_knowledge").insert({
+      org_id: orgId,
+      ai_agent_id: agent!.id,
+      title: "Precios internos",
+      content: "Confidencial",
+    });
+
+    await db.from("integrations").insert({ org_id: orgId, provider: "whatsapp" });
+    await db.from("automations").insert({
+      org_id: orgId,
+      name: "Regla de prueba",
+      trigger_kind: "contacto_creado",
+    });
+    await db.from("message_templates").insert({
+      org_id: orgId,
+      name: `plantilla_${orgId.slice(0, 8)}`,
+    });
+    await db.from("tag_defs").insert({
+      org_id: orgId,
+      key: "prueba",
+      label: "Prueba",
+    });
+    await db.from("custom_field_defs").insert({
+      org_id: orgId,
+      entity: "contacto",
+      key: "prueba",
+      label: "Prueba",
+    });
+    await db.from("notifications").insert({
+      org_id: orgId,
+      title: "Aviso de prueba",
+    });
+    await db.from("follow_ups").insert({
+      org_id: orgId,
+      contact_id: client!.id,
+    });
+    await db.from("role_defs").insert({
+      org_id: orgId,
+      key: "prueba",
+      label: "Rol de prueba",
+    });
+    await db.from("saved_views").insert({
+      org_id: orgId,
+      entity: "contacto",
+      name: "Vista de prueba",
+    });
+    // `clients` no la usa ninguna consulta de la aplicación —quedó de
+    // antes de que los clientes vivieran en `contacts`—, pero existe, tiene
+    // RLS y guarda datos de una empresa. Mientras siga en el esquema se
+    // comprueba como cualquier otra: una tabla que hoy nadie lee es una
+    // tabla que mañana alguien lee.
+    await db.from("clients").insert({ org_id: orgId, name: "Cliente heredado" });
 
     return { woId: wo!.id, stageId: stage!.id };
   }
