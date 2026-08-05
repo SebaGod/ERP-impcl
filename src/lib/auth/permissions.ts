@@ -92,6 +92,12 @@ export const modules: ModuleDef[] = [
     href: "/documentos",
     group: "operacion",
     description: "Registro de documentos tributarios y libro de ventas",
+    // Una boleta dice cuánto se le cobró al cliente, igual que una
+    // cotización. Las cotizaciones y las finanzas ya eran solo de admin;
+    // los documentos tributarios no, así que un operario no veía el precio
+    // cotizado pero sí el facturado por el mismo trabajo. Era la misma
+    // información entrando por otra puerta.
+    soloAdmin: true,
   },
   {
     key: "tablero",

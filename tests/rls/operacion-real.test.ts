@@ -94,13 +94,28 @@ describeIf("techo de gasto del agente", () => {
   it("el día se cuenta en la zona del CLIENTE, no en UTC", async () => {
     await admin.from("ai_agent_runs").delete().eq("org_id", orgId);
 
-    // Mediodía de ayer en Santiago: sin importar la hora UTC en que corra
-    // esta prueba, ese instante pertenece al día anterior del cliente.
-    const { data } = await admin.rpc("ai_spend_check", { p_org: orgId });
-    void data;
-    const ayerSantiago = new Date();
-    ayerSantiago.setUTCDate(ayerSantiago.getUTCDate() - 1);
-    ayerSantiago.setUTCHours(16, 0, 0, 0); // 12:00 en Santiago (UTC-4)
+    // Mediodía de ayer en Santiago.
+    //
+    // Esto se calculaba restándole un día a la fecha UTC y fijando las
+    // 16:00. Solo cae en el día anterior del cliente cuando la fecha UTC
+    // y la chilena coinciden: entre las 00:00 y las 04:00 UTC, Chile
+    // todavía está en el día de antes, así que esa cuenta devolvía el día
+    // de HOY del cliente, el gasto sí contaba y la prueba fallaba. Cuatro
+    // horas de cada veinticuatro — o sea, verde casi siempre y roja de
+    // madrugada, que es la peor forma de fallar: se le echa la culpa al
+    // azar y se vuelve a correr.
+    //
+    // Una prueba de zonas horarias rota por zonas horarias. Ahora parte
+    // de la fecha del cliente, no de la del servidor.
+    const hoyEnSantiago = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Santiago",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+    const [anio, mes, dia] = hoyEnSantiago.split("-").map(Number);
+    // Date.UTC normaliza dia-1 = 0 al último día del mes anterior.
+    const ayerSantiago = new Date(Date.UTC(anio, mes - 1, dia - 1, 16, 0, 0));
     await gastar(99, ayerSantiago.toISOString());
 
     const v = await veredicto();

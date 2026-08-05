@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Link2 } from "lucide-react";
-import { requireOrgContext } from "@/lib/auth";
+import { requireAdminContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { exigirLectura } from "@/lib/lectura";
 import { formatFecha, formatMonto } from "@/lib/locale";
@@ -36,7 +36,7 @@ export default async function DocumentoPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const session = await requireOrgContext();
+  const session = await requireAdminContext();
   const supabase = await createClient();
   const region = session.org.region;
 

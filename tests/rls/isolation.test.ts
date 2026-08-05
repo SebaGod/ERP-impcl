@@ -48,8 +48,6 @@ const MEMBER_TABLES = [
   "appointments",
   "pipelines",
   "pipeline_stages",
-  "dte_documents",
-  "dte_items",
   "ai_agents",
   "ai_agent_knowledge",
   "integrations",
@@ -67,6 +65,10 @@ const MEMBER_TABLES = [
 // Tablas con dinero/precios: solo admin
 const ADMIN_ONLY_TABLES = [
   "invitations",
+  // Una boleta dice cuánto se le cobró al cliente, igual que una
+  // cotización: desde 20260805190000 su lectura es solo de admin.
+  "dte_documents",
+  "dte_items",
   "products",
   "product_cost_items",
   "quotes",

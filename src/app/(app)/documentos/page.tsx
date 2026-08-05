@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { BookText, Plus, Receipt } from "lucide-react";
-import { requireOrgContext } from "@/lib/auth";
+import { requireAdminContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { buttonClasses } from "@/components/ui/button";
 import { EmptyState } from "@/components/empty-state";
@@ -32,7 +32,7 @@ export default async function DocumentosPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const sp = await searchParams;
-  const session = await requireOrgContext();
+  const session = await requireAdminContext();
   const supabase = await createClient();
   const region = session.org.region;
 

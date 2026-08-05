@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowLeft, Download } from "lucide-react";
-import { requireOrgContext } from "@/lib/auth";
+import { requireAdminContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { formatFecha, formatMonto } from "@/lib/locale";
 import { buttonClasses } from "@/components/ui/button";
@@ -25,7 +25,7 @@ export default async function LibroPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const sp = await searchParams;
-  const session = await requireOrgContext();
+  const session = await requireAdminContext();
   const supabase = await createClient();
   const region = session.org.region;
 
