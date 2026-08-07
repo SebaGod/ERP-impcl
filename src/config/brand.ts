@@ -11,8 +11,17 @@ export const brand = {
   logo: "/logo.svg",
   /** Correo de contacto para temas legales / privacidad / soporte */
   contactEmail: "seba@heat.cl",
-  /** Dominio público del sitio (sin barra final) */
-  url: "https://erp-produccion.netlify.app",
+  /**
+   * Dominio público del sitio (sin barra final).
+   *
+   * La producción canónica es Vercel, conectado al repositorio: cada push
+   * a la rama de trabajo despliega solo. Existió además un sitio en
+   * Netlify (erp-produccion.netlify.app) subido a mano en junio; quedó
+   * meses desactualizado y esta referencia apuntándole hizo creer a una
+   * auditoría que era LA producción. Si se contrata un dominio propio,
+   * se cambia acá.
+   */
+  url: "https://erp-impcl.vercel.app",
   colors: {
     primary: "#1d4ed8",
     primaryForeground: "#ffffff",
